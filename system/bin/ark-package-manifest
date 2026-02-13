@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+out="${1:-package_manifest.json}"
+
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+kernel="$(uname -r)"
+
+# Pacman package list (name + version). Checksums are intentionally omitted at this layer:
+# Arch packages are PGP-signed; verifying signatures is handled via pacman keyring / pacman -Qkk.
+# This file is still deterministic for rebuild/pinning workflows.
+pkgs_json="$(pacman -Q | awk '{printf "{\"name\":\"%s\",\"version\":\"%s\",\"install_source\":\"pacman\"}\n",$1,$2}' | jq -s '.')"
+
+jq -n \
+  --arg ts "$ts" \
+  --arg kernel "$kernel" \
+  --arg arch "$(uname -m)" \
+  --arg distro "archlinux" \
+  --argjson pkgs "$pkgs_json" \
+  '{
+    manifest_version:"v1.0",
+    generated_at:$ts,
+    host:{arch:$arch,distro:$distro,kernel:$kernel,boot:{cgroups_v2_unified:true}},
+    packages:$pkgs
+  }' > "$out"
+
+echo "Wrote $out"

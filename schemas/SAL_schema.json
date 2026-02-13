@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arklinux.local/schemas/SAL_schema.json",
+  "title": "Signed Agent Log (SAL) Entry Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sal_version",
+    "agent_id",
+    "run_id",
+    "sequence_no",
+    "timestamp",
+    "tier",
+    "policy",
+    "inputs",
+    "outputs",
+    "claims",
+    "constraints_observed",
+    "risk_assessment",
+    "prev_sal_hash",
+    "sal_hash",
+    "signature"
+  ],
+  "properties": {
+    "sal_version": { "type": "string", "pattern": "^v\\d+\\.\\d+(?:\\.\\d+)?$" },
+    "agent_id": {
+      "type": "string",
+      "enum": ["hrm","kyle","aletheia","kenny","id","watchdog","core","policy","ui","lattice","learning","ingestion","exec","federation"]
+    },
+    "run_id": { "type": "string", "format": "uuid" },
+    "sequence_no": { "type": "integer", "minimum": 0 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "tier": { "type": "string", "enum": ["sandbox","container_build","host_admin","control_plane"] },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_version","scope_hash"],
+      "properties": {
+        "policy_version": { "type": "string", "minLength": 1 },
+        "scope_hash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "mds_ref": { "$ref": "#/$defs/artifact_ref" }
+      }
+    },
+    "inputs": { "type": "array", "items": { "$ref": "#/$defs/artifact_ref" } },
+    "outputs": { "type": "array", "items": { "$ref": "#/$defs/artifact_ref" } },
+    "claims": { "type": "array", "items": { "$ref": "#/$defs/claim" } },
+    "constraints_observed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cgroup","fs","net"],
+      "properties": {
+        "cgroup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cpu_quota","memory_max","tasks_max"],
+          "properties": {
+            "cpu_quota": { "type": "string", "minLength": 1 },
+            "memory_max": { "type": "string", "minLength": 1 },
+            "tasks_max": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "fs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["read_paths","write_paths"],
+          "properties": {
+            "read_paths": { "type": "array", "items": { "type": "string" } },
+            "write_paths": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "net": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ingress","egress_allowlist_set"],
+          "properties": {
+            "ingress": { "type": "boolean" },
+            "egress_allowlist_set": { "type": "string", "minLength": 1 },
+            "namespace": { "type": "string" }
+          }
+        }
+      }
+    },
+    "risk_assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level","rationale_ref"],
+      "properties": {
+        "level": { "type": "string", "enum": ["low","medium","high","critical"] },
+        "rationale_ref": { "$ref": "#/$defs/artifact_ref" }
+      }
+    },
+    "prev_sal_hash": { "type": "string", "pattern": "^(GENESIS|[A-Fa-f0-9]{64})$" },
+    "sal_hash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg","public_key_id","sig"],
+      "properties": {
+        "alg": { "type": "string", "enum": ["Ed25519"] },
+        "public_key_id": { "type": "string", "minLength": 8 },
+        "sig": { "type": "string", "pattern": "^[A-Za-z0-9+/=]{44,}$" }
+      }
+    },
+    "correlation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command_id": { "type": "string" },
+        "plan_hash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "trace_id": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type","hash","path"],
+      "properties": {
+        "type": { "type": "string", "enum": ["file","log","manifest","snapshot","mds","sal","cpa","verified_claim","parameter_artifact"] },
+        "hash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "path": { "type": "string", "minLength": 1 },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "content_type": { "type": "string" }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id","claim_type","payload"],
+      "properties": {
+        "claim_id": { "type": "string", "minLength": 8 },
+        "claim_type": { "type": "string", "minLength": 1 },
+        "payload": { "type": "object" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "scope": { "type": "string" },
+        "evidence_refs": { "type": "array", "items": { "$ref": "#/$defs/artifact_ref" } }
+      }
+    }
+  }
+}

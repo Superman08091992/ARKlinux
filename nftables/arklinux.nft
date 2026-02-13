@@ -1,0 +1,48 @@
+flush ruleset
+
+table inet arklinux {
+  set os_update_v4 { type ipv4_addr; flags interval; }
+  set os_update_v6 { type ipv6_addr; flags interval; }
+
+  set market_feeds_v4 { type ipv4_addr; flags interval; }
+  set federation_sync_v4 { type ipv4_addr; flags interval; }
+  set telemetry_v4 { type ipv4_addr; flags interval; }
+
+  chain input {
+    type filter hook input priority 0;
+    policy drop;
+
+    iif "lo" accept
+    ct state established,related accept
+
+    counter drop
+  }
+
+  chain forward {
+    type filter hook forward priority 0;
+    policy drop;
+  }
+
+  chain output {
+    type filter hook output priority 0;
+    policy drop;
+
+    oif "lo" accept
+    ct state established,related accept
+
+    # DNS baseline (tighten to local resolver if used)
+    udp dport 53 accept
+    tcp dport 53 accept
+
+    # OS updates (HTTPS) - allow only to explicit allowlist IPs
+    ip daddr @os_update_v4 tcp dport 443 accept
+    ip6 daddr @os_update_v6 tcp dport 443 accept
+
+    # Optional categories (empty sets are safe)
+    ip daddr @federation_sync_v4 tcp dport { 443, 8443 } accept
+    ip daddr @market_feeds_v4 tcp dport 443 accept
+    ip daddr @telemetry_v4 tcp dport 443 accept
+
+    counter drop
+  }
+}

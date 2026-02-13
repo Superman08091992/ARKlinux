@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arklinux.local/schemas/MDS_schema.json",
+  "title": "Master Directive Snapshot (MDS) Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mds_version",
+    "run_id",
+    "effective_timestamp",
+    "valid_until",
+    "global_objectives",
+    "constraints",
+    "approved_plans",
+    "denied_plans",
+    "watchdog_state",
+    "learning_promotions",
+    "id_state",
+    "prev_mds_hash",
+    "mds_hash",
+    "hrm_signature"
+  ],
+  "properties": {
+    "mds_version": { "type": "string", "pattern": "^v\\d+\\.\\d+(?:\\.\\d+)?$" },
+    "run_id": { "type": "string", "format": "uuid" },
+    "effective_timestamp": { "type": "string", "format": "date-time" },
+    "valid_until": { "type": "string", "format": "date-time" },
+    "global_objectives": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tier_rules","network","filesystem","resource_budgets"],
+      "properties": {
+        "tier_rules": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sandbox","container_build","host_admin"],
+          "properties": {
+            "sandbox": { "$ref": "#/$defs/tier_rule" },
+            "container_build": { "$ref": "#/$defs/tier_rule" },
+            "host_admin": { "$ref": "#/$defs/tier_rule" }
+          }
+        },
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["default_deny_ingress","default_deny_egress","allowlist_sets"],
+          "properties": {
+            "default_deny_ingress": { "type": "boolean" },
+            "default_deny_egress": { "type": "boolean" },
+            "allowlist_sets": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          }
+        },
+        "filesystem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ark_root","secrets_mode","evidence_mode"],
+          "properties": {
+            "ark_root": { "type": "string", "const": "/opt/ark" },
+            "secrets_mode": { "type": "string", "const": "0700" },
+            "evidence_mode": { "type": "string", "const": "0700" }
+          }
+        },
+        "resource_budgets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "service_budgets": { "type": "object", "additionalProperties": { "$ref": "#/$defs/budget" } },
+            "tier_budgets": { "type": "object", "additionalProperties": { "$ref": "#/$defs/budget" } }
+          }
+        }
+      }
+    },
+    "approved_plans": { "type": "array", "items": { "$ref": "#/$defs/plan_decision" } },
+    "denied_plans": { "type": "array", "items": { "$ref": "#/$defs/plan_decision" } },
+    "watchdog_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode","reason","entered_at"],
+      "properties": {
+        "mode": { "type": "string", "enum": ["NORMAL","HALT","QUARANTINE"] },
+        "reason": { "type": "string" },
+        "entered_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "learning_promotions": { "type": "array", "items": { "$ref": "#/$defs/artifact_ref" } },
+    "id_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["autonomy_enabled","params_artifact_ref"],
+      "properties": {
+        "autonomy_enabled": { "type": "boolean" },
+        "params_artifact_ref": { "$ref": "#/$defs/artifact_ref" },
+        "metrics_ref": { "$ref": "#/$defs/artifact_ref" }
+      }
+    },
+    "prev_mds_hash": { "type": "string", "pattern": "^(GENESIS|[A-Fa-f0-9]{64})$" },
+    "mds_hash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+    "hrm_signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg","public_key_id","sig"],
+      "properties": {
+        "alg": { "type": "string", "enum": ["Ed25519"] },
+        "public_key_id": { "type": "string", "minLength": 8 },
+        "sig": { "type": "string", "pattern": "^[A-Za-z0-9+/=]{44,}$" }
+      }
+    }
+  },
+  "$defs": {
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type","hash","path"],
+      "properties": {
+        "type": { "type": "string" },
+        "hash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpu_quota": { "type": "string" },
+        "memory_max": { "type": "string" },
+        "tasks_max": { "type": "integer", "minimum": 1 },
+        "io_read_bps": { "type": "string" },
+        "io_write_bps": { "type": "string" }
+      }
+    },
+    "tier_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled","requires_mfa","network_allowed"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "requires_mfa": { "type": "boolean" },
+        "network_allowed": { "type": "boolean" },
+        "notes": { "type": "string" }
+      }
+    },
+    "plan_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan_id","plan_hash","decision","reason"],
+      "properties": {
+        "plan_id": { "type": "string", "minLength": 8 },
+        "plan_hash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "decision": { "type": "string", "enum": ["APPROVED","DENIED"] },
+        "reason": { "type": "string" },
+        "expires_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ARK_ROOT="/opt/ark"
+
+mode() { stat -c '%a' "$1"; }
+
+[[ -d "$ARK_ROOT" ]] || { echo "Missing $ARK_ROOT"; exit 2; }
+[[ -d "$ARK_ROOT/secrets" ]] || { echo "Missing $ARK_ROOT/secrets"; exit 2; }
+[[ -d "$ARK_ROOT/aletheia/immutable" ]] || { echo "Missing $ARK_ROOT/aletheia/immutable"; exit 2; }
+
+[[ "$(mode "$ARK_ROOT/secrets")" == "700" ]] || { echo "Bad perms: /opt/ark/secrets"; exit 1; }
+[[ "$(mode "$ARK_ROOT/aletheia/immutable")" == "700" ]] || { echo "Bad perms: /opt/ark/aletheia/immutable"; exit 1; }
+
+echo "OK: perms"

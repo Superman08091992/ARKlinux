@@ -1,0 +1,46 @@
+[Unit]
+Description=ARK Ingestion (Kyle)
+After=ark-core.service
+Wants=ark-core.service
+ConditionPathIsDirectory=/opt/ark
+
+[Service]
+Type=simple
+User=ark
+Group=ark
+WorkingDirectory=/opt/ark
+Environment=ARK_ROOT=/opt/ark
+ExecStartPre=/opt/ark/system/bin/ark-verify-perms
+ExecStart=/opt/ark/system/bin/ark-ingestion
+Restart=on-failure
+RestartSec=2s
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/ark/logs /opt/ark/data /opt/ark/aletheia/immutable
+UMask=0077
+
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+# fail-closed networking at service level (explicitly relax only when you mean it)
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+MemoryMax=2G
+CPUQuota=150%
+TasksMax=1024
+OOMPolicy=kill
+
+[Install]
+WantedBy=ark.target

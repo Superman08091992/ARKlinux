@@ -1,0 +1,46 @@
+[Unit]
+Description=ARK Policy Service
+After=redis.service nftables.service local-fs.target
+Wants=redis.service
+ConditionPathIsDirectory=/opt/ark
+
+[Service]
+Type=simple
+User=ark
+Group=ark
+WorkingDirectory=/opt/ark
+Environment=ARK_ROOT=/opt/ark
+ExecStartPre=/opt/ark/system/bin/ark-verify-perms
+ExecStart=/opt/ark/system/bin/ark-policy
+Restart=on-failure
+RestartSec=2s
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/ark/logs /opt/ark/data /opt/ark/aletheia/immutable
+UMask=0077
+
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+# fail-closed networking at service level (explicitly relax only when you mean it)
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+MemoryMax=1G
+CPUQuota=100%
+TasksMax=512
+OOMPolicy=kill
+
+[Install]
+WantedBy=ark.target

@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arklinux.local/schemas/CPA_schema.json",
+  "title": "Change Proposal Artifact (CPA) Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "cpa_version",
+    "proposal_id",
+    "component",
+    "diff_ref",
+    "risk_assessment",
+    "test_plan",
+    "rollback_plan",
+    "approvals_required",
+    "user_authorization_record",
+    "hrm_signature",
+    "attestation_ref",
+    "created_at"
+  ],
+  "properties": {
+    "cpa_version": { "type": "string", "pattern": "^v\\d+\\.\\d+(?:\\.\\d+)?$" },
+    "proposal_id": { "type": "string", "minLength": 8 },
+    "component": { "type": "string", "minLength": 1 },
+    "diff_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo","ref","hash"],
+      "properties": {
+        "repo": { "type": "string", "minLength": 1 },
+        "ref": { "type": "string", "minLength": 1 },
+        "hash": { "type": "string", "pattern": "^[A-Fa-f0-9]{40,64}$" }
+      }
+    },
+    "risk_assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level","summary","threats"],
+      "properties": {
+        "level": { "type": "string", "enum": ["low","medium","high","critical"] },
+        "summary": { "type": "string", "minLength": 1 },
+        "threats": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "test_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tier","steps","success_criteria"],
+      "properties": {
+        "tier": { "type": "string", "enum": ["sandbox","container_build"] },
+        "steps": { "type": "array", "items": { "type": "string" } },
+        "success_criteria": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "rollback_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy","steps"],
+      "properties": {
+        "strategy": { "type": "string", "enum": ["btrfs_snapshot_restore","git_revert","artifact_restore","manual"] },
+        "steps": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "approvals_required": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["hrm","user","security","sre"] }
+    },
+    "user_authorization_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authorized","authorized_at","auth_method","evidence_ref"],
+      "properties": {
+        "authorized": { "type": "boolean" },
+        "authorized_at": { "type": "string", "format": "date-time" },
+        "auth_method": { "type": "string", "minLength": 1 },
+        "evidence_ref": { "$ref": "#/$defs/artifact_ref" }
+      }
+    },
+    "hrm_signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg","public_key_id","sig"],
+      "properties": {
+        "alg": { "type": "string", "enum": ["Ed25519"] },
+        "public_key_id": { "type": "string", "minLength": 8 },
+        "sig": { "type": "string", "pattern": "^[A-Za-z0-9+/=]{44,}$" }
+      }
+    },
+    "attestation_ref": { "$ref": "#/$defs/artifact_ref" },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type","hash","path"],
+      "properties": {
+        "type": { "type": "string" },
+        "hash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

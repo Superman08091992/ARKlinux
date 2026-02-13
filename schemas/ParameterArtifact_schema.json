@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arklinux.local/schemas/ParameterArtifact_schema.json",
+  "title": "ParameterArtifact Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "pa_version",
+    "artifact_id",
+    "model_name",
+    "format",
+    "parameters",
+    "metrics",
+    "created_at",
+    "signature"
+  ],
+  "properties": {
+    "pa_version": { "type": "string", "pattern": "^v\\d+\\.\\d+(?:\\.\\d+)?$" },
+    "artifact_id": { "type": "string", "minLength": 8 },
+    "model_name": { "type": "string", "minLength": 1 },
+    "format": { "type": "string", "enum": ["state_dict","safetensors","onnx","json"] },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256","path","size_bytes"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "path": { "type": "string", "pattern": "^/opt/ark/agents/id/params/.*" },
+        "size_bytes": { "type": "integer", "minimum": 1, "maximum": 268435456 }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "eval_score": { "type": "number" },
+        "loss": { "type": "number" },
+        "cycles_trained": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg","public_key_id","sig"],
+      "properties": {
+        "alg": { "type": "string", "enum": ["Ed25519"] },
+        "public_key_id": { "type": "string", "minLength": 8 },
+        "sig": { "type": "string", "pattern": "^[A-Za-z0-9+/=]{44,}$" }
+      }
+    }
+  }
+}
