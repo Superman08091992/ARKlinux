@@ -1,0 +1,14 @@
+NAME="ARKLinux"
+PRETTY_NAME="ARKLinux v1.0.1 (Individual Operator Edition)"
+ID=arklinux
+ID_LIKE=arch
+ANSI_COLOR="0;36"
+HOME_URL="https://github.com/Superman08091992/ARKlinux"
+DOCUMENTATION_URL="https://github.com/Superman08091992/ARKlinux/blob/main/docs/BUILDING.md"
+SUPPORT_URL="https://github.com/Superman08091992/ARKlinux/issues"
+BUG_REPORT_URL="https://github.com/Superman08091992/ARKlinux/issues"
+VERSION="1.0.1"
+VERSION_ID="1.0.1"
+BUILD_ID="@BUILD_ID@"
+IMAGE_ID="arklinux"
+IMAGE_VERSION="1.0.1"

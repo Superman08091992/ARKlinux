@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# ark-install — ARKLinux disk installer
+# Usage: ark-install <target-disk>  [--confirm]
+# Example: ark-install /dev/sda --confirm
+#
+# Creates BTRFS layout:
+#   ESP (512 MiB, FAT32)    → /boot/efi
+#   root (remainder, BTRFS) → subvolumes: @  @home  @log  @snapshots  @opt_ark
+#
+# Installs systemd-boot as bootloader.
+# Generates /etc/fstab via genfstab.
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# ── Constants ────────────────────────────────────────────────────────────────
+readonly SCRIPT_VERSION="1.0.1"
+readonly MOUNT_ROOT="/mnt/arkinstall"
+LOG_FILE=""
+LOG_FILE="/tmp/ark-install-$(date +%s).log"
+readonly LOG_FILE
+readonly REQUIRED_DISK_GB=10
+readonly BTRFS_OPTS="defaults,noatime,compress=zstd:1,space_cache=v2"
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+log()  { echo "[ark-install] $*" | tee -a "$LOG_FILE"; }
+die()  { echo "[ark-install] ERROR: $*" | tee -a "$LOG_FILE" >&2; exit 1; }
+warn() { echo "[ark-install] WARN: $*"  | tee -a "$LOG_FILE"; }
+
+# ── Usage ────────────────────────────────────────────────────────────────────
+usage() {
+  cat <<EOF
+ark-install v${SCRIPT_VERSION} — ARKLinux disk installer
+
+Usage:
+  ark-install <device> [--confirm]
+
+Arguments:
+  <device>    Target block device (e.g., /dev/sda, /dev/nvme0n1)
+  --confirm   Skip interactive confirmation prompt (for CI/automated use)
+
+Examples:
+  ark-install /dev/sda
+  ark-install /dev/nvme0n1 --confirm
+
+WARNING: ALL DATA ON <device> WILL BE DESTROYED.
+EOF
+  exit 0
+}
+
+# ── Parse arguments ───────────────────────────────────────────────────────────
+TARGET_DISK=""
+CONFIRMED=false
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage ;;
+    --confirm) CONFIRMED=true ;;
+    /dev/*)    TARGET_DISK="$arg" ;;
+    *) die "Unknown argument: $arg" ;;
+  esac
+done
+
+[[ -z "$TARGET_DISK" ]] && { usage; }
+
+# ── Pre-flight checks ─────────────────────────────────────────────────────────
+log "ARKLinux Installer v${SCRIPT_VERSION} starting"
+log "Target: $TARGET_DISK"
+log "Log:    $LOG_FILE"
+
+[[ $EUID -eq 0 ]] || die "Must run as root"
+[[ -b "$TARGET_DISK" ]]  || die "Not a block device: $TARGET_DISK"
+
+# Check disk size
+DISK_SIZE_GB=$(( $(lsblk -bdn -o SIZE "$TARGET_DISK") / 1024 / 1024 / 1024 ))
+log "Disk size: ${DISK_SIZE_GB} GiB"
+(( DISK_SIZE_GB >= REQUIRED_DISK_GB )) || \
+  die "Disk too small (${DISK_SIZE_GB} GiB < ${REQUIRED_DISK_GB} GiB required)"
+
+# Check we are running from an ARKLinux live environment
+[[ -f /etc/os-release ]] && source /etc/os-release
+[[ "${ID:-}" == "arklinux" ]] || \
+  warn "Not running on ARKLinux live ISO — proceed with caution"
+
+# ── Confirmation ──────────────────────────────────────────────────────────────
+if [[ "$CONFIRMED" != "true" ]]; then
+  echo ""
+  echo "  ┌──────────────────────────────────────────────────────────────┐"
+  echo "  │  WARNING: This will ERASE ALL DATA on ${TARGET_DISK}         │"
+  echo "  │  ARKLinux v${SCRIPT_VERSION} will be installed.                       │"
+  echo "  └──────────────────────────────────────────────────────────────┘"
+  echo ""
+  read -r -p "  Type 'yes' to continue: " REPLY
+  [[ "$REPLY" == "yes" ]] || die "Installation cancelled by user"
+fi
+
+# ── Determine partition naming ────────────────────────────────────────────────
+# nvme0n1 → nvme0n1p1 / sda → sda1
+if [[ "$TARGET_DISK" =~ nvme|mmcblk ]]; then
+  PART_PREFIX="${TARGET_DISK}p"
+else
+  PART_PREFIX="${TARGET_DISK}"
+fi
+PART_ESP="${PART_PREFIX}1"
+PART_ROOT="${PART_PREFIX}2"
+
+# ── Step 1: Partition ─────────────────────────────────────────────────────────
+log "Step 1/8: Partitioning $TARGET_DISK (GPT)"
+sgdisk --zap-all "$TARGET_DISK" >> "$LOG_FILE" 2>&1
+sgdisk \
+  --new=1:0:+512M  --typecode=1:ef00 --change-name=1:"EFI System" \
+  --new=2:0:0      --typecode=2:8300 --change-name=2:"ARKLinux root" \
+  "$TARGET_DISK" >> "$LOG_FILE" 2>&1
+partprobe "$TARGET_DISK" 2>/dev/null || true
+sleep 1
+log "  Partitions: $PART_ESP (ESP) $PART_ROOT (root)"
+
+# ── Step 2: Format ────────────────────────────────────────────────────────────
+log "Step 2/8: Formatting partitions"
+mkfs.fat -F32 -n "ARKESP" "$PART_ESP" >> "$LOG_FILE" 2>&1
+mkfs.btrfs -f -L "ARKLinux_root" "$PART_ROOT" >> "$LOG_FILE" 2>&1
+log "  ESP: FAT32, Root: BTRFS label=ARKLinux_root"
+
+# ── Step 3: BTRFS subvolumes ──────────────────────────────────────────────────
+log "Step 3/8: Creating BTRFS subvolumes"
+mkdir -p "$MOUNT_ROOT"
+mount "$PART_ROOT" "$MOUNT_ROOT" >> "$LOG_FILE" 2>&1
+
+for sv in @ @home @log @snapshots @opt_ark; do
+  btrfs subvolume create "${MOUNT_ROOT}/${sv}" >> "$LOG_FILE" 2>&1
+  log "  Created: $sv"
+done
+umount "$MOUNT_ROOT"
+
+# ── Step 4: Mount subvolumes ──────────────────────────────────────────────────
+log "Step 4/8: Mounting subvolumes"
+mount -o "subvol=@,${BTRFS_OPTS}" "$PART_ROOT" "$MOUNT_ROOT"
+mkdir -p "${MOUNT_ROOT}"/{home,var/log,opt/ark,.snapshots,boot/efi}
+mount -o "subvol=@home,${BTRFS_OPTS}"       "$PART_ROOT" "${MOUNT_ROOT}/home"
+mount -o "subvol=@log,${BTRFS_OPTS}"        "$PART_ROOT" "${MOUNT_ROOT}/var/log"
+mount -o "subvol=@opt_ark,${BTRFS_OPTS}"    "$PART_ROOT" "${MOUNT_ROOT}/opt/ark"
+mount -o "subvol=@snapshots,${BTRFS_OPTS}"  "$PART_ROOT" "${MOUNT_ROOT}/.snapshots"
+mount "$PART_ESP" "${MOUNT_ROOT}/boot/efi"
+log "  Subvolumes mounted at $MOUNT_ROOT"
+
+# ── Step 5: Copy live root to installed system ────────────────────────────────
+log "Step 5/8: Installing root filesystem (rsync from live root)"
+# Exclude volatile/live-only paths
+rsync -aAXH --delete \
+  --exclude=/proc \
+  --exclude=/sys \
+  --exclude=/dev \
+  --exclude=/run \
+  --exclude=/tmp \
+  --exclude=/mnt \
+  --exclude=/media \
+  --exclude=/lost+found \
+  --exclude=/boot/efi \
+  / "${MOUNT_ROOT}/" >> "$LOG_FILE" 2>&1
+log "  Root filesystem installed"
+
+# ── Step 6: Generate fstab ────────────────────────────────────────────────────
+log "Step 6/8: Generating /etc/fstab"
+genfstab -U "$MOUNT_ROOT" > "${MOUNT_ROOT}/etc/fstab"
+log "  fstab written"
+
+# ── Step 7: Install bootloader (systemd-boot) ─────────────────────────────────
+log "Step 7/8: Installing systemd-boot"
+arch-chroot "$MOUNT_ROOT" bootctl install >> "$LOG_FILE" 2>&1
+
+log "  Kernel: $(ls "${MOUNT_ROOT}/usr/lib/modules/" 2>/dev/null | head -1)"
+ESP_DIR="${MOUNT_ROOT}/boot/efi"
+LOADER_DIR="${ESP_DIR}/loader"
+ENTRIES_DIR="${LOADER_DIR}/entries"
+mkdir -p "$ENTRIES_DIR"
+
+cat > "${LOADER_DIR}/loader.conf" << LOADER
+default arklinux.conf
+timeout 5
+console-mode auto
+editor  no
+LOADER
+
+# Copy kernel and initramfs to ESP
+mkdir -p "${ESP_DIR}/EFI/arklinux"
+cp "${MOUNT_ROOT}/boot/vmlinuz-linux"       "${ESP_DIR}/EFI/arklinux/"
+cp "${MOUNT_ROOT}/boot/initramfs-linux.img" "${ESP_DIR}/EFI/arklinux/"
+cp "${MOUNT_ROOT}/boot/intel-ucode.img"     "${ESP_DIR}/EFI/arklinux/" 2>/dev/null || true
+cp "${MOUNT_ROOT}/boot/amd-ucode.img"       "${ESP_DIR}/EFI/arklinux/" 2>/dev/null || true
+
+ROOT_UUID=$(blkid -s UUID -o value "$PART_ROOT")
+cat > "${ENTRIES_DIR}/arklinux.conf" << ENTRY
+title   ARKLinux v${SCRIPT_VERSION}
+linux   /EFI/arklinux/vmlinuz-linux
+initrd  /EFI/arklinux/intel-ucode.img
+initrd  /EFI/arklinux/amd-ucode.img
+initrd  /EFI/arklinux/initramfs-linux.img
+options root=UUID=${ROOT_UUID} rootflags=subvol=@ rw audit=1 quiet loglevel=3
+ENTRY
+
+log "  systemd-boot installed, entry: $ENTRIES_DIR/arklinux.conf"
+log "  Root UUID: $ROOT_UUID"
+
+# ── Step 8: Post-install tasks ────────────────────────────────────────────────
+log "Step 8/8: Post-install configuration"
+
+# Regenerate initramfs in installed system
+arch-chroot "$MOUNT_ROOT" mkinitcpio -p linux >> "$LOG_FILE" 2>&1 || \
+  warn "mkinitcpio failed — boot may require manual initramfs rebuild"
+
+# Set machine-id
+arch-chroot "$MOUNT_ROOT" systemd-machine-id-setup >> "$LOG_FILE" 2>&1 || true
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+log ""
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+log " ARKLinux v${SCRIPT_VERSION} installed successfully!"
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+log " Disk:        $TARGET_DISK"
+log " ESP:         $PART_ESP"
+log " Root:        $PART_ROOT (UUID: $ROOT_UUID)"
+log " Subvolumes:  @ @home @log @snapshots @opt_ark"
+log " Bootloader:  systemd-boot"
+log " Log file:    $LOG_FILE"
+log ""
+log " Unmount and reboot:"
+log "   umount -R $MOUNT_ROOT && reboot"
+log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

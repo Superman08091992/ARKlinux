@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# ark-verify-perms — ARKLinux permission auditor
+# Verifies that /opt/ark sub-directory permissions match the canonical spec.
+# Exits 0 if all permissions match; exits 1 with diff on any mismatch.
+# Run as root from cron or CI.
+
+set -euo pipefail
+
+STATE_ROOT="${ARK_STATE_ROOT:-/opt/ark}"
+FAIL=0
+
+check() {
+  local path="$1" expected_owner="$2" expected_mode="$3"
+  if [[ ! -e "$path" ]]; then
+    echo "MISSING: $path" >&2
+    FAIL=1
+    return
+  fi
+  local actual_owner actual_mode
+  actual_owner=$(stat -c "%U:%G" "$path")
+  actual_mode=$(stat -c "%a" "$path")
+  if [[ "$actual_owner" != "$expected_owner" || "$actual_mode" != "$expected_mode" ]]; then
+    echo "FAIL $path: owner=${actual_owner}(want ${expected_owner}) mode=${actual_mode}(want ${expected_mode})" >&2
+    FAIL=1
+  else
+    echo "OK   $path"
+  fi
+}
+
+check "$STATE_ROOT"                   "ark:ark"  "750"
+check "$STATE_ROOT/secrets"           "ark:ark"  "700"
+check "$STATE_ROOT/id"                "ark:ark"  "700"
+check "$STATE_ROOT/quarantine"        "ark:ark"  "700"
+check "$STATE_ROOT/models"            "ark:ark"  "755"
+check "$STATE_ROOT/logs"              "ark:ark"  "750"
+check "$STATE_ROOT/aletheia"          "ark:ark"  "750"
+check "$STATE_ROOT/aletheia/audit"    "ark:ark"  "750"
+check "$STATE_ROOT/aletheia/manifests" "ark:ark" "750"
+check "/etc/ark/config.toml"          "root:ark" "640"
+check "/etc/nftables.conf"            "root:root" "644"
+
+if [[ $FAIL -ne 0 ]]; then
+  echo ""
+  echo "ark-verify-perms: FAILED — see above" >&2
+  exit 1
+fi
+
+echo ""
+echo "ark-verify-perms: ALL OK"

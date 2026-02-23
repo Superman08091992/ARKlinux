@@ -1,0 +1,8 @@
+[Unit]
+Description=ARKLinux Individual Operator Edition — Service Target
+Documentation=https://github.com/Superman08091992/ARKlinux
+After=network-online.target nftables.service
+Requires=nftables.service
+
+[Install]
+WantedBy=multi-user.target

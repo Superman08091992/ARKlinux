@@ -1,0 +1,65 @@
+# ARKLinux package list — pinned to Arch 2026.02.01 snapshot
+# Generated: 2026-02-23
+# Mirror: https://archive.archlinux.org/repos/2026/02/01/$repo/os/$arch
+# Kernel: linux 6.18.9.arch1-2
+# To regenerate this list against a new snapshot:
+#   ./build/scripts/pin-packages.sh <YYYY/MM/DD>
+
+# ── Base system ──────────────────────────────────────────────────────────────
+base
+linux
+linux-firmware
+systemd
+systemd-sysvcompat
+
+# ── Core utilities ───────────────────────────────────────────────────────────
+bash
+bash-completion
+coreutils
+util-linux
+procps-ng
+iproute2
+shadow
+sudo
+which
+less
+grep
+sed
+gawk
+findutils
+diffutils
+file
+xz
+zstd
+gzip
+tar
+
+# ── Filesystem ───────────────────────────────────────────────────────────────
+btrfs-progs
+dosfstools
+e2fsprogs
+parted
+
+# ── Network ──────────────────────────────────────────────────────────────────
+nftables
+openssh
+curl
+wget
+iputils
+dnsmasq
+
+# ── Hardware / boot ──────────────────────────────────────────────────────────
+mkinitcpio
+mkinitcpio-archiso
+syslinux
+efibootmgr
+
+# ── ARK runtime dependencies ─────────────────────────────────────────────────
+python
+python-pip
+git
+
+# ── Tooling (live environment helpers) ───────────────────────────────────────
+arch-install-scripts
+rsync
+squashfs-tools

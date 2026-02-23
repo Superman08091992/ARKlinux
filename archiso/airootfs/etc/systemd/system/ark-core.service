@@ -1,0 +1,63 @@
+[Unit]
+Description=ARK Core Service
+Documentation=https://github.com/Superman08091992/ARKlinux
+After=network.target ark-watchdog.service
+Requires=nftables.service
+PartOf=ark.target
+
+[Service]
+Type=simple
+User=ark
+Group=ark
+ExecStart=/usr/local/bin/ark-core
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ark-core
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectClock=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+AmbientCapabilities=
+CapabilityBoundingSet=
+SecureBits=noroot noroot-locked
+
+# Filesystem access
+ReadOnlyPaths=/opt/ark/models /opt/ark/aletheia
+ReadWritePaths=/opt/ark/logs /opt/ark/run /opt/ark/memory /opt/ark/bus
+InaccessiblePaths=/opt/ark/secrets /opt/ark/quarantine
+
+# Bind service to loopback only
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+# Resource limits
+MemoryMax=2G
+CPUQuota=80%
+TasksMax=256
+LimitNOFILE=65536
+
+[Install]
+WantedBy=ark.target

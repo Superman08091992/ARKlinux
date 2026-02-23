@@ -1,0 +1,58 @@
+[Unit]
+Description=ARK Watchdog — evidence-chain integrity monitor
+Documentation=https://github.com/Superman08091992/ARKlinux
+After=ark-core.service
+PartOf=ark.target
+StartLimitIntervalSec=60s
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=ark
+Group=ark
+ExecStart=/usr/local/bin/ark-watchdog
+Restart=always
+RestartSec=10s
+TimeoutStartSec=20s
+TimeoutStopSec=10s
+
+# On integrity failure: activate quarantine target, halt further starts
+ExecStopPost=/bin/systemctl --no-block start ark-quarantine.target
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ark-watchdog
+
+# Security hardening (same as ark-core)
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+# Watchdog can read the full aletheia tree
+ReadOnlyPaths=/opt/ark/aletheia /opt/ark/logs /opt/ark/run
+ReadWritePaths=/opt/ark/aletheia/audit
+
+MemoryMax=256M
+CPUQuota=10%
+TasksMax=32
+
+[Install]
+WantedBy=ark.target

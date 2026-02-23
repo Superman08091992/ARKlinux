@@ -1,0 +1,9 @@
+# ARKLinux /etc/fstab — populated by ark-install for installed system.
+# On the live ISO, / is a tmpfs overlay over the SquashFS read-only root.
+# This file is a placeholder; ark-install generates the real fstab via genfstab.
+
+# tmpfs for /tmp
+tmpfs /tmp tmpfs defaults,noatime,nosuid,nodev,noexec,mode=1777,size=512M 0 0
+
+# tmpfs for /run (systemd mounts this automatically; listed here for documentation)
+# tmpfs /run tmpfs defaults,noatime,nosuid,nodev,mode=0755,size=100M 0 0

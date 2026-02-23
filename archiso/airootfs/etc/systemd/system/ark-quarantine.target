@@ -1,0 +1,12 @@
+[Unit]
+Description=ARK Fail-Closed Quarantine Target
+Documentation=https://github.com/Superman08091992/ARKlinux
+# When activated, stops all ARK services and blocks networking.
+# Requires manual operator intervention to clear.
+# Triggered automatically by ark-watchdog on evidence-chain corruption.
+DefaultDependencies=no
+Conflicts=ark.target network-online.target
+After=ark.target
+
+[Install]
+WantedBy=multi-user.target

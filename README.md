@@ -1,134 +1,157 @@
-# ARKLinux — Individual Operator Edition v1.0-final
+# ARKLinux — Individual Operator Edition
 
-**ARKLinux** is an Arch Linux–based operating system designed as the native substrate for the **A.R.K.** (Autonomous Reasoning Kernel) platform. It delivers a hardened, self-governing, evidence-chain OS for single-node AI agent deployments.
+> A hardened, self-governing Arch Linux–based OS built as the native substrate
+> for the **A.R.K.** (Autonomous Reasoning Kernel) platform.
 
----
-
-## 📀 Latest Release
-
-| Asset | Size | SHA256 |
-|---|---|---|
-| [`arklinux-v1.0-final-x86_64.iso`](releases/v1.0-final/arklinux-v1.0-final-x86_64.iso) | 111 MB | `94c3eee3348cd47990231a18ace4cdca627f8ceb9c4a47ddae983d9f72850cf9` |
-| [`MANIFEST.sha256`](releases/v1.0-final/MANIFEST.sha256) | 1.2 KB | release manifest |
-
-**Build Date:** 2026-02-23 | **Kernel:** 6.18.9-arch1-2 | **Base:** Arch Linux 2026.02.01
-
-> ⚠️ The ISO is stored via [Git LFS](https://git-lfs.com/). Run `git lfs pull` after cloning to fetch it.
+[![Build](https://github.com/Superman08091992/ARKlinux/actions/workflows/build-release.yml/badge.svg)](https://github.com/Superman08091992/ARKlinux/actions/workflows/build-release.yml)
 
 ---
 
-## 🏗️ Architecture
+## Download
 
-```
-┌─────────────────────────────────────────────────────┐
-│  HOST OS                                            │
-│  UEFI + GRUB2 | Linux 6.18.9 | NetworkManager      │
-│  nftables (default-deny) | BTRFS subvolumes         │
-├─────────────────────────────────────────────────────┤
-│  CANONICAL STATE ROOT  /opt/ark/                    │
-│  models | ingest | bus | memory | logs | quarantine │
-│  snapshots | backup | apps | id | agents | secrets  │
-├─────────────────────────────────────────────────────┤
-│  SERVICE PLANE  (systemd-sandboxed)                 │
-│  ark-core.service | ark-watchdog.service            │
-│  Ollama LLM | Redis | MemoryEngine | PolicyGate     │
-├─────────────────────────────────────────────────────┤
-│  AGENT PLANE                                        │
-│  Kyle | Joey | Kenny  (system users, venvs)         │
-│  Optional: Aletheia/Verifier | HRM/Reasoning        │
-├─────────────────────────────────────────────────────┤
-│  SECURITY BOUNDARY                                  │
-│  NoNewPrivileges | PrivateTmp | ReadOnlyPaths       │
-│  IPAddressDeny=any | Loopback-only network          │
-│  Fail-closed quarantine on evidence chain error     │
-└─────────────────────────────────────────────────────┘
-```
+| File | Description |
+|------|-------------|
+| [`arklinux-1.0.1-x86_64.iso`](https://github.com/Superman08091992/ARKlinux/releases/latest) | Bootable ISO — BIOS + UEFI |
+| `SHA256SUMS` | Checksums |
+| `SHA256SUMS.sigstore.json` | Cosign / Sigstore signature |
+| `arklinux-1.0.1.sbom.spdx.json` | Software Bill of Materials |
+| `provenance.json` | SLSA-style build provenance |
 
----
+**Verify before use:**
 
-## 📦 Package Contents
-
-| Component | Version |
-|---|---|
-| Base system | Arch Linux base |
-| Kernel | linux 6.18.9.arch1-2 |
-| Init | systemd 259.1 |
-| Firewall | nftables 1.1.6 |
-| Filesystem | btrfs-progs 6.19 |
-| Python | 3.14.3 |
-| OpenSSH | 10.2p1 |
-
----
-
-## 🔒 Security Profile
-
-- **Default-deny firewall** — `nftables` drops all external traffic; loopback only
-- **Strict systemd sandboxing** — `NoNewPrivileges`, `PrivateTmp`, `PrivateDevices`, `ProtectSystem=strict`
-- **Read-only model mounts** — `/opt/ark/models` is `ReadOnlyPaths` in all service units
-- **Per-agent RW subvolumes** — agents get isolated BTRFS subvolumes
-- **Fail-closed quarantine** — evidence chain corruption triggers `ark-quarantine.target`
-- **IPAddressDeny=any** — all services bound to `127.0.0.1` only
-
----
-
-## 🚀 Installation
-
-Boot the ISO, then run:
 ```bash
-ark-install /dev/sdX
+# Checksum
+sha256sum -c SHA256SUMS
+
+# Cosign signature
+cosign verify-blob \
+  --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity-regexp "https://github.com/Superman08091992/ARKlinux" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  SHA256SUMS
 ```
 
-The installer creates:
-- `@` — root BTRFS subvolume
-- `@home` — home subvolume
-- `@log` — journal subvolume  
-- `@snapshots` — snapshot subvolume
-- `@opt_ark` — ARK state root subvolume
-
-Bootloader: **systemd-boot** (EFI) with kernel cmdline `audit=1`
+Full verification guide → [docs/BUILDING.md](docs/BUILDING.md#verifying-a-published-release)
 
 ---
 
-## 📁 Repository Structure
+## Install
+
+Boot the ISO, then:
+
+```bash
+ark-install /dev/sdX --confirm
+```
+
+Creates BTRFS subvolumes `@` `@home` `@log` `@snapshots` `@opt_ark`,
+installs **systemd-boot**, and generates `/etc/fstab`.
+
+---
+
+## Architecture
 
 ```
-ARKlinux/
-├── releases/
-│   └── v1.0-final/
-│       ├── arklinux-v1.0-final-x86_64.iso   ← Git LFS
-│       └── MANIFEST.sha256
-├── build/
-│   └── installer/
-│       └── ark-install.sh
-├── systemd_units/
-│   ├── ark-core.service
-│   ├── ark-watchdog.service
-│   ├── ark-ingestion.service
-│   ├── ark-learning.service
-│   ├── ark-policy.service
-│   ├── ark.target
-│   └── redis.service
-├── nftables/
-│   └── arklinux.nft
-├── schemas/
-│   ├── SAL_schema.json
-│   ├── MDS_schema.json
-│   ├── VerifiedClaim_schema.json
-│   ├── CPA_schema.json
-│   └── ParameterArtifact_schema.json
-└── system/
-    └── bin/
-        ├── ark-package-manifest
-        └── ark-verify-perms
+┌─────────────────────────────────────────────────────────────┐
+│  ARKLinux (host OS — Arch Linux base, kernel 6.18.9)        │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  nftables — default-deny, loopback-only             │    │
+│  └─────────────────────────────────────────────────────┘    │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  /opt/ark (canonical state root, ark:ark 750)       │    │
+│  │  ├── models/     ingest/    bus/    memory/          │    │
+│  │  ├── logs/       agents/    run/    backup/          │    │
+│  │  ├── secrets/    id/        quarantine/ (700)        │    │
+│  │  └── aletheia/  ─►  audit/  manifests/ (immutable)  │    │
+│  └─────────────────────────────────────────────────────┘    │
+│  ┌────────────────────┐  ┌──────────────────────────────┐   │
+│  │  ark-core.service  │  │  ark-watchdog.service        │   │
+│  │  (Python, ark uid) │  │  SHA-256 aletheia tree/60 s  │   │
+│  │  heartbeat + state │  │  → quarantine on violation   │   │
+│  └────────────────────┘  └──────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🔗 Related Repositories
+## Build (reproducible)
 
-- [`Superman08091992/ark`](https://github.com/Superman08091992/ark) — ARK Python runtime
-- [`Superman08091992/ARK_GENESIS`](https://github.com/Superman08091992/ARK_GENESIS) — Genesis bootstrap
+```bash
+git clone https://github.com/Superman08091992/ARKlinux.git
+cd ARKlinux
+docker build -t arklinux-builder build/docker/
+docker run --privileged \
+  -v "$(pwd)":/src -v /tmp/out:/out \
+  arklinux-builder
+```
+
+All packages are pinned to the **Arch Linux Archive snapshot 2026-02-01**.
+CI (GitHub Actions) is the **only path** to an official signed release.
+
+→ [docs/BUILDING.md](docs/BUILDING.md) — full build, verify, and reproduce guide.
 
 ---
 
-*ARKLinux Individual Operator Edition — built for sovereign, single-node AI operations.*
+## Supply chain
+
+| Layer | Tool / mechanism |
+|-------|-----------------|
+| Build environment | `archlinux:base` container, pinned Arch Archive snapshot |
+| Package lock | `build/lock/packages.lock` (regenerate: `./build/scripts/pin-packages.sh`) |
+| Static analysis | ShellCheck (all bash scripts), Python `py_compile` |
+| nftables validation | `nft -c -f` in CI |
+| Artifact signing | cosign keyless (Sigstore OIDC via GitHub Actions) |
+| SBOM | Syft → SPDX JSON |
+| Provenance | SLSA-style `provenance.json` + GitHub artifact attestation |
+| Official release | CI tag push only — no local one-off builds |
+
+---
+
+## Security profile
+
+| Feature | Implementation |
+|---------|---------------|
+| Firewall | nftables `policy drop` on all chains, loopback-only |
+| Service isolation | `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict`, `CapabilityBoundingSet=` |
+| Non-root services | `ark` system user (UID 973), no login shell |
+| Fail-closed quarantine | watchdog exit-2 → `ark-quarantine.target` → stops all ARK services |
+| Evidence integrity | SHA-256 hash of aletheia tree every 60 s |
+| Egress control | `IPAddressDeny=any` per service unit |
+
+---
+
+## Repository layout
+
+```
+archiso/                    ← mkarchiso profile (THE authoritative build input)
+│  profiledef.sh            ← ISO metadata and file permissions
+│  packages.x86_64          ← Pinned package list
+│  pacman.conf              ← Arch Archive snapshot mirror
+│  airootfs/
+│    etc/
+│      customize_airootfs.sh ← User creation, service enablement, assertions
+│      mkinitcpio.conf       ← archiso live-boot hooks
+│      nftables.conf         ← Default-deny firewall
+│      systemd/system/       ← ark-core, ark-watchdog, ark-quarantine, ark.target
+│    usr/local/bin/
+│      ark-install           ← BTRFS + systemd-boot installer
+│      ark-core              ← Core agent (Python)
+│      ark-watchdog          ← Integrity watchdog (Python)
+│      ark-verify-perms      ← Permission auditor
+│  efiboot/loader/           ← systemd-boot entries (UEFI)
+│  syslinux/                 ← syslinux config (BIOS)
+.github/workflows/
+│  build-release.yml        ← CI: lint → build → SBOM → sign → release
+build/
+│  docker/Dockerfile        ← Reproducible build container
+│  scripts/pin-packages.sh  ← Regenerate packages.lock
+│  lock/packages.lock       ← Exact package versions (generated)
+docs/
+│  BUILDING.md              ← One-command build, verify, reproduce
+```
+
+---
+
+## Related repositories
+
+- [`Superman08091992/ark`](https://github.com/Superman08091992/ark) — ARK agent runtime
+- [`Superman08091992/ARK_GENESIS`](https://github.com/Superman08091992/ARK_GENESIS) — origin specification

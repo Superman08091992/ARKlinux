@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""
+ark-watchdog — ARKLinux evidence-chain integrity monitor
+Runs as 'ark' user. Periodically hashes the aletheia manifest tree and
+compares against a stored baseline. On divergence: logs, writes quarantine
+flag, and exits with code 2 (systemd ExecStopPost triggers ark-quarantine.target).
+"""
+import hashlib
+import json
+import logging
+import os
+import signal
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+# ── Configuration ─────────────────────────────────────────────────────────────
+STATE_ROOT     = Path(os.environ.get("ARK_STATE_ROOT", "/opt/ark"))
+ALETHEIA_DIR   = STATE_ROOT / "aletheia"
+AUDIT_LOG      = ALETHEIA_DIR / "audit" / "events.log"
+QUARANTINE_DIR = STATE_ROOT / "quarantine"
+BASELINE_FILE  = STATE_ROOT / "run" / "watchdog_baseline.json"
+CHECK_INTERVAL = 60   # seconds
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [ark-watchdog] %(levelname)s %(message)s",
+    handlers=[
+        logging.FileHandler(AUDIT_LOG),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+log = logging.getLogger("ark-watchdog")
+
+_running = True
+def _handle_signal(sig, _frame):
+    global _running
+    log.info("Received signal %s", sig)
+    _running = False
+
+signal.signal(signal.SIGTERM, _handle_signal)
+signal.signal(signal.SIGINT, _handle_signal)
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+def hash_tree(root: Path) -> dict[str, str]:
+    """SHA-256 every regular file under root, return path→hash dict."""
+    hashes: dict[str, str] = {}
+    for f in sorted(root.rglob("*")):
+        if f.is_file():
+            h = hashlib.sha256(f.read_bytes()).hexdigest()
+            hashes[str(f.relative_to(root))] = h
+    return hashes
+
+def write_audit_event(kind: str, detail: str) -> None:
+    entry = json.dumps({
+        "timestamp": now_iso(),
+        "kind":      kind,
+        "detail":    detail,
+    })
+    with open(AUDIT_LOG, "a") as af:
+        af.write(entry + "\n")
+
+def enter_quarantine(reason: str) -> None:
+    QUARANTINE_DIR.mkdir(parents=True, exist_ok=True)
+    flag = QUARANTINE_DIR / "QUARANTINE_ACTIVE"
+    flag.write_text(json.dumps({
+        "timestamp": now_iso(),
+        "reason":    reason,
+        "cleared":   False,
+    }, indent=2))
+    log.critical("QUARANTINE ACTIVATED: %s", reason)
+    write_audit_event("QUARANTINE", reason)
+    sys.exit(2)   # systemd ExecStopPost → ark-quarantine.target
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+def main() -> None:
+    log.info("ARK Watchdog starting — monitoring: %s", ALETHEIA_DIR)
+
+    if not ALETHEIA_DIR.exists():
+        enter_quarantine(f"aletheia directory missing: {ALETHEIA_DIR}")
+
+    # Build initial baseline
+    baseline = hash_tree(ALETHEIA_DIR)
+    BASELINE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    BASELINE_FILE.write_text(json.dumps(baseline, indent=2))
+    write_audit_event("BASELINE_SET", f"{len(baseline)} files hashed")
+    log.info("Baseline set: %d files", len(baseline))
+
+    cycle = 0
+    while _running:
+        time.sleep(CHECK_INTERVAL)
+        if not _running:
+            break
+
+        cycle += 1
+        current = hash_tree(ALETHEIA_DIR)
+
+        added   = set(current) - set(baseline)
+        removed = set(baseline) - set(current)
+        changed = {k for k in set(current) & set(baseline) if current[k] != baseline[k]}
+
+        if added or removed or changed:
+            detail = f"added={sorted(added)} removed={sorted(removed)} changed={sorted(changed)}"
+            log.error("Evidence-chain integrity violation: %s", detail)
+            write_audit_event("INTEGRITY_VIOLATION", detail)
+            enter_quarantine(detail)
+
+        log.info("Check #%d — %d files verified, no changes", cycle, len(current))
+        write_audit_event("CHECK_OK", f"cycle={cycle} files={len(current)}")
+
+    log.info("Watchdog stopped after %d cycles", cycle)
+
+if __name__ == "__main__":
+    main()
