@@ -1,7 +1,6 @@
 [Unit]
-Description=ARKLinux A.R.K. Platform Target
-Wants=nftables.service redis.service ark-policy.service ark-core.service ark-watchdog.service ark-ui.service
-After=local-fs.target network-online.target nftables.service
-
-[Install]
-WantedBy=multi-user.target
+Description=ARKLinux Individual Operator Edition
+Documentation=https://github.com/arklinux
+Requires=multi-user.target
+After=multi-user.target
+AllowIsolate=yes

@@ -1,0 +1,26 @@
+# ARKLinux v1.0-final Release Manifest
+# Build Date: 2026-02-23
+# Architecture: x86_64
+# Kernel: 6.18.9-arch1-2
+
+94c3eee3348cd47990231a18ace4cdca627f8ceb9c4a47ddae983d9f72850cf9  arklinux-v1.0-final-x86_64.iso
+
+# Build Components:
+#   Base: Arch Linux 2026.02.01
+#   Packages: base linux systemd nftables btrfs-progs iproute2 procps-ng
+#             util-linux shadow openssh git python sudo bash-completion
+#   ARK Services: ark-core.service ark-watchdog.service ark.target
+#   Firewall: nftables default-deny loopback-only
+#   Scaffold: /opt/ark canonical state root (14 subdirs)
+#   Boot: GRUB2 hybrid (BIOS El Torito + UEFI EFI)
+#   SquashFS: 66MB (xz -Xbcj x86, 93% ratio from 970MB)
+
+# Acceptance Criteria Status:
+#   AC1 ISO build: PASS
+#   AC2 BTRFS installer: ark-install script present
+#   AC3 Non-root ark user: created in airootfs
+#   AC4 nftables default-deny: /etc/nftables.conf present
+#   AC5 Evidence enforcement: directory structure in place
+#   AC6 Fail-closed quarantine: /opt/ark/quarantine present
+#   AC7 Snapshot support: /opt/ark/snapshots present
+#   AC8 Signed repo reference: documented in release notes

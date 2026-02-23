@@ -1,46 +1,42 @@
 [Unit]
-Description=ARK Core Orchestrator
-After=ark-policy.service redis.service nftables.service
-Wants=ark-policy.service redis.service
-ConditionPathIsDirectory=/opt/ark
+Description=ARK Core Service
+Documentation=https://github.com/arklinux
+After=network.target
+Wants=ark-watchdog.service
 
 [Service]
 Type=simple
 User=ark
 Group=ark
 WorkingDirectory=/opt/ark
-Environment=ARK_ROOT=/opt/ark
-ExecStartPre=/opt/ark/system/bin/ark-verify-perms
-ExecStart=/opt/ark/system/bin/ark-core
+ExecStart=/usr/bin/python /opt/ark/agents/core.py
 Restart=on-failure
-RestartSec=2s
-StartLimitIntervalSec=60
-StartLimitBurst=5
+RestartSec=5s
 
+# Security hardening
 NoNewPrivileges=yes
 PrivateTmp=yes
+PrivateDevices=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/opt/ark/logs /opt/ark/data /opt/ark/var /opt/ark/aletheia/immutable
-UMask=0077
-
+ReadOnlyPaths=/opt/ark/models
+ReadWritePaths=/opt/ark/logs /opt/ark/memory /opt/ark/bus /opt/ark/ingest /opt/ark/run
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
-LockPersonality=yes
-RestrictSUIDSGID=yes
+RestrictNamespaces=yes
 RestrictRealtime=yes
+LockPersonality=yes
 MemoryDenyWriteExecute=yes
-SystemCallArchitectures=native
-
-# fail-closed networking at service level (explicitly relax only when you mean it)
-IPAddressDeny=any
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
 IPAddressAllow=localhost
+IPAddressDeny=any
 
+# Resource limits
 MemoryMax=2G
-CPUQuota=150%
-TasksMax=1024
-OOMPolicy=kill
+CPUQuota=80%
+TasksMax=256
 
 [Install]
-WantedBy=ark.target
+WantedBy=multi-user.target

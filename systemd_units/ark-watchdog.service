@@ -1,0 +1,19 @@
+[Unit]
+Description=ARK Watchdog - Evidence Chain Monitor
+After=ark-core.service
+
+[Service]
+Type=simple
+User=ark
+Group=ark
+ExecStart=/usr/bin/python /opt/ark/agents/watchdog.py
+Restart=always
+RestartSec=10s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadOnlyPaths=/opt/ark/memory /opt/ark/logs
+ReadWritePaths=/opt/ark/run
+
+[Install]
+WantedBy=ark.target
