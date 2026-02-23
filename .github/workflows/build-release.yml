@@ -1,0 +1,319 @@
+name: ARKLinux Build & Release Supply Chain
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      snapshot_date:
+        description: 'Arch snapshot date (YYYY/MM/DD)'
+        required: false
+        default: '2026/02/01'
+      release_tag:
+        description: 'Release tag to publish (e.g. v1.0.1)'
+        required: false
+
+env:
+  ISO_NAME: arklinux
+  ARCH: x86_64
+  SNAPSHOT_DATE: ${{ github.event.inputs.snapshot_date || '2026/02/01' }}
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # STAGE 1: Lint & static analysis
+  # ─────────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint & ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: ShellCheck – ark-install
+        run: shellcheck -S warning archiso/airootfs/usr/local/bin/ark-install
+
+      - name: ShellCheck – ark-verify-perms
+        run: shellcheck -S warning archiso/airootfs/usr/local/bin/ark-verify-perms
+
+      - name: ShellCheck – customize_airootfs.sh
+        run: shellcheck -S warning archiso/airootfs/etc/customize_airootfs.sh
+
+      - name: ShellCheck – profiledef.sh
+        run: shellcheck -S warning archiso/profiledef.sh
+
+      - name: ShellCheck – build/installer/ark-install.sh
+        run: shellcheck -S warning build/installer/ark-install.sh
+
+      - name: ShellCheck – build/scripts/pin-packages.sh
+        run: shellcheck -S warning build/scripts/pin-packages.sh
+
+      - name: Python syntax – ark-core
+        run: python3 -m py_compile archiso/airootfs/usr/local/bin/ark-core
+
+      - name: Python syntax – ark-watchdog
+        run: python3 -m py_compile archiso/airootfs/usr/local/bin/ark-watchdog
+
+      - name: Validate JSON schemas
+        run: |
+          for f in schemas/*.json; do
+            python3 -c "import json,sys; json.load(open('$f'))" && echo "OK: $f"
+          done
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # STAGE 2: Build ISO in clean Arch Linux container
+  # ─────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build ISO
+    needs: lint
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+      options: --privileged
+    outputs:
+      iso_name: ${{ steps.meta.outputs.iso_name }}
+      iso_sha256: ${{ steps.sha.outputs.sha256 }}
+      kernel_ver: ${{ steps.meta.outputs.kernel_ver }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bootstrap pacman & install build tools
+        run: |
+          # Point pacman at pinned snapshot mirror
+          SNAP="${SNAPSHOT_DATE//\//-}"
+          cat > /etc/pacman.d/mirrorlist << EOF
+          Server = https://archive.archlinux.org/repos/${SNAPSHOT_DATE}/\$repo/os/\$arch
+          EOF
+          pacman -Sy --noconfirm --needed archiso git dosfstools e2fsprogs \
+            squashfs-tools libisoburn erofs-utils mtools
+
+      - name: Pin packages.lock
+        run: bash build/scripts/pin-packages.sh "${SNAPSHOT_DATE}"
+
+      - name: Build ISO with mkarchiso
+        run: |
+          mkdir -p /tmp/arkwork /tmp/arkout
+          cp -r archiso /tmp/arkwork/profile
+          mkarchiso -v -w /tmp/arkwork -o /tmp/arkout /tmp/arkwork/profile
+          ls -lh /tmp/arkout/*.iso
+
+      - name: Capture kernel version
+        id: meta
+        run: |
+          ISO=$(ls /tmp/arkout/*.iso | head -1)
+          ISO_BASENAME=$(basename "$ISO")
+          echo "iso_name=${ISO_BASENAME}" >> "$GITHUB_OUTPUT"
+          # Extract kernel version from ISO
+          KVER=$(isoinfo -l -i "$ISO" 2>/dev/null | grep vmlinuz | head -1 || echo "6.x")
+          echo "kernel_ver=${KVER}" >> "$GITHUB_OUTPUT"
+          cp "$ISO" /workspace/
+
+      - name: SHA-256 checksum
+        id: sha
+        run: |
+          ISO=$(ls /workspace/*.iso | head -1)
+          SHA=$(sha256sum "$ISO" | awk '{print $1}')
+          echo "sha256=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "${SHA}  $(basename $ISO)" > /workspace/SHA256SUMS
+          echo "SHA256: $SHA"
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: arklinux-iso
+          path: |
+            /workspace/*.iso
+            /workspace/SHA256SUMS
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # STAGE 3: SBOM generation (Syft)
+  # ─────────────────────────────────────────────────────────────────────────
+  sbom:
+    name: Generate SBOM
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ISO artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: arklinux-iso
+          path: /workspace/
+
+      - name: Install Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin
+
+      - name: Mount ISO and generate SBOM
+        run: |
+          ISO=$(ls /workspace/*.iso | head -1)
+          mkdir -p /mnt/iso
+          sudo mount -o loop,ro "$ISO" /mnt/iso 2>/dev/null || \
+            sudo mount -o ro "$ISO" /mnt/iso
+          ISO_BASE=$(basename "$ISO" .iso)
+          # Generate SPDX SBOM
+          syft dir:/mnt/iso --output spdx-json \
+            > /workspace/${ISO_BASE}-sbom.spdx.json
+          # Also generate CycloneDX
+          syft dir:/mnt/iso --output cyclonedx-json \
+            > /workspace/${ISO_BASE}-sbom.cdx.json
+          sudo umount /mnt/iso
+          ls -lh /workspace/*.json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: arklinux-sbom
+          path: /workspace/*-sbom.*
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # STAGE 4: Sign artifacts with cosign (keyless / Sigstore OIDC)
+  # ─────────────────────────────────────────────────────────────────────────
+  sign:
+    name: Sign & Attest
+    needs: [build, sbom]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write    # needed for keyless cosign signing
+      contents: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ISO artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: arklinux-iso
+          path: /workspace/
+
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: arklinux-sbom
+          path: /workspace/
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign ISO (keyless)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          ISO=$(ls /workspace/*.iso | head -1)
+          cosign sign-blob \
+            --bundle /workspace/$(basename $ISO).cosign.bundle \
+            --yes \
+            "$ISO"
+
+      - name: Sign SHA256SUMS
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign sign-blob \
+            --bundle /workspace/SHA256SUMS.cosign.bundle \
+            --yes \
+            /workspace/SHA256SUMS
+
+      - name: Generate SLSA provenance attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: '/workspace/*.iso'
+
+      - name: Upload signed artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: arklinux-signed
+          path: /workspace/*.bundle
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # STAGE 5: Publish GitHub Release
+  # ─────────────────────────────────────────────────────────────────────────
+  release:
+    name: Publish Release
+    needs: [build, sbom, sign]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: /workspace/
+
+      - name: Flatten artifact directories
+        run: |
+          find /workspace -type f | while read f; do
+            cp "$f" /release-assets/ 2>/dev/null || true
+          done
+          mkdir -p /release-assets
+          find /workspace -type f -exec cp {} /release-assets/ \; 2>/dev/null
+          ls -lh /release-assets/
+
+      - name: Determine tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG"
+
+      - name: Build release notes
+        run: |
+          ISO_SHA="${{ needs.build.outputs.iso_sha256 }}"
+          SNAP="${SNAPSHOT_DATE}"
+          cat > /tmp/release_notes.md << EOF
+          ## ARKLinux ${{ steps.tag.outputs.tag }}
+
+          **Base:** Arch Linux ${SNAP}
+          **Kernel:** ${{ needs.build.outputs.kernel_ver }}
+          **Build date:** $(date -u +%Y-%m-%d)
+          **ISO SHA-256:** \`${ISO_SHA}\`
+
+          ### Verification
+          \`\`\`bash
+          # Verify checksum
+          sha256sum --check SHA256SUMS
+
+          # Verify cosign signature (keyless)
+          cosign verify-blob \\
+            --bundle arklinux-*.iso.cosign.bundle \\
+            --certificate-identity-regexp 'https://github.com/Superman08091992/ARKlinux' \\
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \\
+            arklinux-*.iso
+          \`\`\`
+
+          ### Release artifacts
+          | File | Description |
+          |------|-------------|
+          | \`*.iso\` | Bootable live ISO (BIOS + UEFI) |
+          | \`SHA256SUMS\` | SHA-256 checksum manifest |
+          | \`*.cosign.bundle\` | Cosign keyless signature bundle |
+          | \`*-sbom.spdx.json\` | SPDX Software Bill of Materials |
+          | \`*-sbom.cdx.json\` | CycloneDX SBOM |
+
+          See [BUILDING.md](https://github.com/Superman08091992/ARKlinux/blob/main/docs/BUILDING.md)
+          for full reproducibility instructions.
+          EOF
+
+      - name: Create/update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "ARKLinux ${{ steps.tag.outputs.tag }}"
+          body_path: /tmp/release_notes.md
+          draft: false
+          prerelease: false
+          files: /release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
