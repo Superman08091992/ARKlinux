@@ -1,0 +1,153 @@
+ARKLinux Software License Agreement
+Version 1.0 — Effective 2026-02-23
+
+Copyright (c) 2026 Superman08091992 and the ARKLinux Contributors.
+All rights reserved.
+
+═══════════════════════════════════════════════════════════════════════════════
+PART I — OPEN SOURCE COMPONENTS
+═══════════════════════════════════════════════════════════════════════════════
+
+ARKLinux is an Arch Linux–based distribution.  The base operating system,
+kernel, system libraries, and third-party packages are distributed under their
+respective upstream licenses (GPL-2.0, GPL-3.0, MIT, LGPL-2.1, BSD-2-Clause,
+Apache-2.0, and others).  A machine-readable Software Bill of Materials (SBOM)
+in SPDX format is generated for every official release and attached to the
+corresponding GitHub Release as "arklinux-<version>-sbom.spdx.json".  The SBOM
+is the authoritative record of all included components and their licenses.
+
+Source code for all GPL-licensed components is available via the upstream Arch
+Linux Archive snapshot pinned in archiso/pacman.conf and build/lock/packages.lock
+at the exact date stamped in each release.
+
+═══════════════════════════════════════════════════════════════════════════════
+PART II — ARK-ORIGINAL WORKS (Permissive / MIT-style)
+═══════════════════════════════════════════════════════════════════════════════
+
+The following files are original works authored specifically for ARKLinux and
+are licensed under the MIT License:
+
+  archiso/airootfs/usr/local/bin/ark-install
+  archiso/airootfs/usr/local/bin/ark-core
+  archiso/airootfs/usr/local/bin/ark-watchdog
+  archiso/airootfs/usr/local/bin/ark-verify-perms
+  archiso/airootfs/etc/customize_airootfs.sh
+  archiso/airootfs/etc/nftables.conf
+  archiso/airootfs/etc/systemd/system/ark-core.service
+  archiso/airootfs/etc/systemd/system/ark-watchdog.service
+  archiso/airootfs/etc/systemd/system/ark-quarantine.target
+  archiso/airootfs/etc/systemd/system/ark.target
+  archiso/profiledef.sh
+  archiso/packages.x86_64
+  archiso/pacman.conf
+  build/docker/Dockerfile
+  build/docker/entrypoint.sh
+  build/scripts/pin-packages.sh
+  .github/workflows/build-release.yml
+  schemas/*.json
+  systemd_units/*.service
+  systemd_units/*.target
+  system/bin/*
+  docs/BUILDING.md
+  docs/BUILD_ENV.md
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of these files and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+═══════════════════════════════════════════════════════════════════════════════
+PART III — ARK CONCEPT AND BRANDING (Proprietary)
+═══════════════════════════════════════════════════════════════════════════════
+
+The "A.R.K." concept, the ARKLinux name, the ARKLinux logo (if any), the
+CPA/MDS/SAL/VerifiedClaim JSON schemas, and the ARK operator identity model
+are proprietary to Superman08091992 and are NOT licensed for redistribution or
+derivative branding without explicit written permission.
+
+You MAY:
+  • Run ARKLinux for personal, educational, or internal organizational use.
+  • Study the schemas and concept documentation.
+  • Fork the build infrastructure (Part II above) under the MIT terms, provided
+    you remove ARKLinux branding and rename the resulting distribution.
+
+You MAY NOT:
+  • Distribute a modified ISO or package set under the "ARKLinux" or "A.R.K."
+    name without written permission.
+  • Use the ARK logo or trade dress in any derivative work.
+  • Claim official endorsement or certification from the ARKLinux project.
+
+═══════════════════════════════════════════════════════════════════════════════
+PART IV — RELEASE INTEGRITY AND SUPPLY-CHAIN TERMS
+═══════════════════════════════════════════════════════════════════════════════
+
+Every official ARKLinux release is signed with cosign/sigstore and/or a project
+GPG key.  Release artifacts attached to https://github.com/Superman08091992/ARKlinux
+include:
+
+  • ISO image (*.iso)
+  • SHA-256 checksum manifest (SHA256SUMS)
+  • Cosign bundle or GPG signature (*.bundle / *.sig)
+  • SPDX SBOM (*.spdx.json)
+  • SLSA-style provenance attestation (*.intoto.jsonl)
+
+End users SHOULD verify the signature and checksum before booting or installing.
+Verification instructions are in docs/BUILDING.md.
+
+Unofficial builds (ISOs not produced by the GitHub Actions workflow in
+.github/workflows/build-release.yml and not signed by the project key) are NOT
+endorsed and carry no warranty.
+
+═══════════════════════════════════════════════════════════════════════════════
+PART V — DISCLAIMER AND LIMITATION OF LIABILITY
+═══════════════════════════════════════════════════════════════════════════════
+
+THIS SOFTWARE IS PROVIDED FOR EXPERIMENTAL AND EDUCATIONAL PURPOSES.
+THE AUTHORS MAKE NO REPRESENTATIONS OR WARRANTIES OF ANY KIND, EXPRESS OR
+IMPLIED, AS TO THE SUITABILITY OF ARKLINUX FOR ANY PARTICULAR PURPOSE,
+INCLUDING BUT NOT LIMITED TO PRODUCTION, CRITICAL INFRASTRUCTURE, OR
+SAFETY-CRITICAL SYSTEMS.
+
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES ARISING
+FROM THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+DAMAGE.
+
+═══════════════════════════════════════════════════════════════════════════════
+THIRD-PARTY ACKNOWLEDGEMENTS
+═══════════════════════════════════════════════════════════════════════════════
+
+ARKLinux builds upon the following upstream projects (non-exhaustive):
+
+  • Arch Linux          — https://archlinux.org/              (GPL variants)
+  • Linux Kernel        — https://kernel.org/                 (GPL-2.0-only)
+  • systemd             — https://systemd.io/                 (LGPL-2.1)
+  • nftables            — https://netfilter.org/projects/nftables/ (GPL-2.0)
+  • GRUB 2              — https://www.gnu.org/software/grub/  (GPL-3.0)
+  • Python              — https://python.org/                 (PSF-2.0)
+  • mkinitcpio          — https://archlinux.org/              (GPL-2.0)
+  • archiso             — https://archlinux.org/              (GPL-3.0)
+  • Btrfs               — https://btrfs.readthedocs.io/       (GPL-2.0)
+  • cosign / sigstore   — https://sigstore.dev/               (Apache-2.0)
+  • Syft (SBOM)         — https://github.com/anchore/syft     (Apache-2.0)
+
+Full SBOM is available in the GitHub Release assets for each release tag.
+
+═══════════════════════════════════════════════════════════════════════════════
+END OF LICENSE
+═══════════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,79 @@
+# ARKLinux Build Sandbox — System Information Snapshot
+# Generated: 2026-02-23
+
+## Kernel
+Linux e2b.local 6.1.158 #2 SMP PREEMPT_DYNAMIC Tue Nov 25 15:58:27 UTC 2025 x86_64 GNU/Linux
+
+## OS Release
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+NAME="Debian GNU/Linux"
+VERSION_ID="13"
+VERSION="13 (trixie)"
+VERSION_CODENAME=trixie
+DEBIAN_VERSION_FULL=13.1
+ID=debian
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+
+## CPU
+Architecture:                            x86_64
+CPU(s):                                  2
+On-line CPU(s) list:                     0,1
+Model name:                              Intel(R) Xeon(R) Processor @ 2.00GHz
+Thread(s) per core:                      2
+Core(s) per socket:                      1
+NUMA node0 CPU(s):                       0,1
+
+## Memory
+               total        used        free      shared  buff/cache   available
+Mem:           985Mi       730Mi        80Mi       976Ki       354Mi       254Mi
+Swap:          127Mi          0B       127Mi
+
+## Disk
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/root        26G  5.4G   20G  22% /
+devtmpfs        490M     0  490M   0% /dev
+tmpfs           493M     0  493M   0% /dev/shm
+tmpfs           198M   68K  197M   1% /run
+tmpfs           5.0M     0  5.0M   0% /run/lock
+tmpfs           493M   24K  493M   1% /tmp
+s3fs             64P     0   64P   0% /mnt/user-data/uploads
+s3fs             64P     0   64P   0% /mnt/knowledge
+s3fs             64P     0   64P   0% /mnt/skills
+s3fs             64P     0   64P   0% /mnt/user-data/outputs
+s3fs             64P     0   64P   0% /mnt/user-data/backups
+
+## Hostname
+e2b.local
+
+## Mounts
+/dev/vda on / type ext4 (rw,relatime)
+securityfs on /sys/kernel/security type securityfs (rw,nosuid,nodev,noexec,relatime)
+selinuxfs on /sys/fs/selinux type selinuxfs (rw,nosuid,noexec,relatime)
+pstore on /sys/fs/pstore type pstore (rw,nosuid,nodev,noexec,relatime)
+bpf on /sys/fs/bpf type bpf (rw,nosuid,nodev,noexec,relatime,mode=700)
+mqueue on /dev/mqueue type mqueue (rw,nosuid,nodev,noexec,relatime)
+hugetlbfs on /dev/hugepages type hugetlbfs (rw,nosuid,nodev,relatime,pagesize=2M)
+debugfs on /sys/kernel/debug type debugfs (rw,nosuid,nodev,noexec,relatime)
+ramfs on /run/credentials/systemd-journald.service type ramfs (ro,nosuid,nodev,noexec,relatime,nosymfollow,mode=700)
+fusectl on /sys/fs/fuse/connections type fusectl (rw,nosuid,nodev,noexec,relatime)
+ramfs on /run/credentials/systemd-networkd.service type ramfs (ro,nosuid,nodev,noexec,relatime,nosymfollow,mode=700)
+ramfs on /run/credentials/getty@tty3.service type ramfs (ro,nosuid,nodev,noexec,relatime,nosymfollow,mode=700)
+ramfs on /run/credentials/getty@tty4.service type ramfs (ro,nosuid,nodev,noexec,relatime,nosymfollow,mode=700)
+ramfs on /run/credentials/getty@tty1.service type ramfs (ro,nosuid,nodev,noexec,relatime,nosymfollow,mode=700)
+ramfs on /run/credentials/getty@tty6.service type ramfs (ro,nosuid,nodev,noexec,relatime,nosymfollow,mode=700)
+ramfs on /run/credentials/getty@tty5.service type ramfs (ro,nosuid,nodev,noexec,relatime,nosymfollow,mode=700)
+ramfs on /run/credentials/getty@tty2.service type ramfs (ro,nosuid,nodev,noexec,relatime,nosymfollow,mode=700)
+s3fs on /mnt/user-data/uploads type fuse.s3fs (rw,nosuid,nodev,relatime,user_id=0,group_id=0,allow_other)
+s3fs on /mnt/knowledge type fuse.s3fs (rw,nosuid,nodev,relatime,user_id=0,group_id=0,allow_other)
+s3fs on /mnt/skills type fuse.s3fs (ro,nosuid,nodev,relatime,user_id=0,group_id=0,allow_other)
+s3fs on /mnt/user-data/outputs type fuse.s3fs (rw,nosuid,nodev,relatime,user_id=0,group_id=0,allow_other)
+s3fs on /mnt/user-data/backups type fuse.s3fs (rw,nosuid,nodev,relatime,user_id=0,group_id=0,allow_other)
+AIDriveFUSE on /mnt/aidrive type fuse (rw,nosuid,nodev,relatime,user_id=0,group_id=0,allow_other)
+
+## Environment Variables (sanitized)
+PATH=/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games
+LANG=not set
+HOME=/home/user
+USER=user

@@ -1,0 +1,23 @@
+# ARKLinux Build Environment — Tool Versions
+# Generated: 2026-02-23
+git: /usr/bin/git
+git version 2.47.3
+python3: /usr/local/bin/python3
+Python 3.12.12
+pip3: /usr/local/bin/pip3
+pip 25.0.1 from /usr/local/lib/python3.12/site-packages/pip (python 3.12)
+bash: /usr/bin/bash
+GNU bash, version 5.2.37(1)-release (x86_64-pc-linux-gnu)
+shellcheck: /usr/bin/shellcheck
+ShellCheck - shell script analysis tool
+nft: not installed
+xorriso: not installed
+qemu-system-x86_64: not installed
+mksquashfs: not installed
+unsquashfs: not installed
+sgdisk: not installed
+parted: not installed
+mkfs.fat: not installed
+mkfs.btrfs: not installed
+grub-mkimage: not installed
+grub-mkstandalone: not installed

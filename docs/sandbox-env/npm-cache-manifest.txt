@@ -1,0 +1,6 @@
+_cacache
+_libvips
+_logs
+_prebuilds
+_update-notifier-last-checked
+728M	/opt/npm-cache/
