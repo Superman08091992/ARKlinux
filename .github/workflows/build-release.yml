@@ -14,6 +14,9 @@ on:
         description: 'Release tag to publish (e.g. v1.0.1)'
         required: false
 
+permissions:
+  contents: read
+
 env:
   ISO_NAME: arklinux
   ARCH: x86_64
