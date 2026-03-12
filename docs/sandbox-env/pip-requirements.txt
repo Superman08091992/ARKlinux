@@ -161,7 +161,7 @@ thinc==8.3.8
 threadpoolctl==3.6.0
 tifffile==2025.10.16
 tinycss2==1.4.0
-tornado==6.5.1
+tornado==6.5.5
 tqdm==4.67.1
 traitlets==5.14.3
 typer==0.20.0
