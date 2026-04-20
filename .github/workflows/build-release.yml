@@ -30,7 +30,7 @@ jobs:
     name: Lint & ShellCheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install ShellCheck
         run: sudo apt-get install -y shellcheck
@@ -80,7 +80,7 @@ jobs:
       iso_sha256: ${{ steps.sha.outputs.sha256 }}
       kernel_ver: ${{ steps.meta.outputs.kernel_ver }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Bootstrap pacman & install build tools
         run: |
@@ -141,7 +141,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download ISO artifact
         uses: actions/download-artifact@v4
@@ -189,7 +189,7 @@ jobs:
       contents: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download ISO artifact
         uses: actions/download-artifact@v4
@@ -247,7 +247,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
