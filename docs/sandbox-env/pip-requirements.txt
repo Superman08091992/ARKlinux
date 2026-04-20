@@ -117,7 +117,7 @@ pure_eval==0.2.3
 pycparser==2.23
 pydantic==2.12.4
 pydantic_core==2.41.5
-Pygments==2.19.2
+Pygments==2.20.0
 pyparsing==3.2.5
 pytest==9.0.3
 python-dateutil==2.9.0.post0
