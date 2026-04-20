@@ -22,7 +22,6 @@ if command -v pacman >/dev/null 2>&1; then
   echo "[pin-packages] pacman detected; resolving directly"
 
   # Point pacman at snapshot mirror
-  SNAP="${SNAPSHOT//\//-}"
   cat > /etc/pacman.d/mirrorlist << EOF
 Server = https://archive.archlinux.org/repos/${SNAPSHOT}/\$repo/os/\$arch
 EOF
