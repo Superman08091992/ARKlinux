@@ -85,7 +85,6 @@ jobs:
       - name: Bootstrap pacman & install build tools
         run: |
           # Point pacman at pinned snapshot mirror
-          SNAP="${SNAPSHOT_DATE//\//-}"
           cat > /etc/pacman.d/mirrorlist << EOF
           Server = https://archive.archlinux.org/repos/${SNAPSHOT_DATE}/\$repo/os/\$arch
           EOF
