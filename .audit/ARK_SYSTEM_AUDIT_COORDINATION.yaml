@@ -1,0 +1,18 @@
+audit_id: ark-system-boundary-audit-v1
+repository: ARKlinux
+baseline_commit: 5f9561a7f265124f4b89dbe6c4694ece0183e3c6
+baseline_branch: main
+audit_branch: audit/ark-boundary-r000
+authoritative_control_repository: ARK_GENESIS
+authoritative_control_branch: audit/ark-boundary-r000
+authoritative_control_path: .audit
+corresponding_baseline:
+  repository: ARK_GENESIS
+  commit: ce36e958a8e13890d644c9f6504ae45c13493e0f
+canonical_boundary:
+  ARKlinux: hardware and operating-system substrate
+  A.R.K.: software governance, inventory, authorization, execution coordination, evidence, state, and reconciliation
+resume_instruction: >
+  Read ARK_GENESIS/.audit/ARK_SYSTEM_AUDIT_MANIFEST.yaml and
+  ARK_SYSTEM_AUDIT_RESUME.md before reviewing or changing this repository.
+status: initialized
