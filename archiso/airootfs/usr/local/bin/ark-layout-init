@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Initialize the canonical ARKlinux-owned /ark namespace.
+
+set -euo pipefail
+
+readonly ARK_ROOT="${ARK_ROOT:-/ark}"
+readonly LEGACY_ROOT="/opt/ark"
+readonly -a FACETS=(
+  existence location ownership purpose startup access dependencies
+  state changes authority stop restore
+)
+
+if [[ "$ARK_ROOT" != "/ark" ]]; then
+  printf 'ark-layout-init: refusing noncanonical root: %s\n' "$ARK_ROOT" >&2
+  exit 1
+fi
+
+install -d -m 0750 -o ark -g ark "$ARK_ROOT"
+for facet in "${FACETS[@]}"; do
+  install -d -m 0750 -o ark -g ark "$ARK_ROOT/$facet"
+done
+
+install -d -m 0750 -o ark -g ark \
+  "$ARK_ROOT/state/logs" \
+  "$ARK_ROOT/state/run" \
+  "$ARK_ROOT/state/memory" \
+  "$ARK_ROOT/state/bus" \
+  "$ARK_ROOT/state/models" \
+  "$ARK_ROOT/changes/audit" \
+  "$ARK_ROOT/authority/manifests" \
+  "$ARK_ROOT/existence/aletheia"
+install -d -m 0700 -o ark -g ark \
+  "$ARK_ROOT/state/secrets" \
+  "$ARK_ROOT/state/quarantine" \
+  "$ARK_ROOT/state/id"
+
+link_if_absent() {
+  local target="$1"
+  local link="$2"
+  if [[ ! -e "$link" && ! -L "$link" ]]; then
+    ln -s "$target" "$link"
+  fi
+}
+
+# Transitional projections used by the existing substrate helpers. The facet
+# directories above remain authoritative.
+link_if_absent "state/logs" "$ARK_ROOT/logs"
+link_if_absent "state/run" "$ARK_ROOT/run"
+link_if_absent "state/memory" "$ARK_ROOT/memory"
+link_if_absent "state/bus" "$ARK_ROOT/bus"
+link_if_absent "state/models" "$ARK_ROOT/models"
+link_if_absent "state/secrets" "$ARK_ROOT/secrets"
+link_if_absent "state/quarantine" "$ARK_ROOT/quarantine"
+link_if_absent "state/id" "$ARK_ROOT/id"
+link_if_absent "existence/aletheia" "$ARK_ROOT/aletheia"
+link_if_absent "../../changes/audit" "$ARK_ROOT/existence/aletheia/audit"
+link_if_absent "../../authority/manifests" "$ARK_ROOT/existence/aletheia/manifests"
+
+# Preserve the existing genesis manifest as migration input when present.
+if [[ -f "$LEGACY_ROOT/aletheia/manifests/state.json" && \
+      ! -f "$ARK_ROOT/authority/manifests/state.json" ]]; then
+  cp -a "$LEGACY_ROOT/aletheia/manifests/state.json" \
+    "$ARK_ROOT/authority/manifests/state.json"
+  chown ark:ark "$ARK_ROOT/authority/manifests/state.json"
+fi
+
+# New images expose the old path only as a compatibility projection. Existing
+# directories are left untouched for an explicit, evidence-backed migration.
+if [[ ! -e "$LEGACY_ROOT" && ! -L "$LEGACY_ROOT" ]]; then
+  install -d -m 0755 /opt
+  ln -s /ark "$LEGACY_ROOT"
+elif [[ -d "$LEGACY_ROOT" && ! -L "$LEGACY_ROOT" ]]; then
+  printf 'ark-layout-init: legacy directory retained pending migration: %s\n' \
+    "$LEGACY_ROOT" >&2
+fi
+
+printf 'ark-layout-init: canonical namespace ready at %s\n' "$ARK_ROOT"
