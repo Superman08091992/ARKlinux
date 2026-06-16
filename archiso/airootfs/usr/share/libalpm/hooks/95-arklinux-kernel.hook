@@ -1,0 +1,13 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = linux
+Target = linux-lts
+Target = linux-ark
+
+[Action]
+Description = Staging the active ARKlinux kernel under canonical boot names
+When = PostTransaction
+Exec = /usr/bin/bash /usr/local/lib/arklinux/stage-kernel
+NeedsTargets
