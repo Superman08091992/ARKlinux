@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Stage the active ARKlinux kernel and initramfs under canonical ESP names.
+
+set -euo pipefail
+
+readonly ESP_ROOT="${ARKLINUX_ESP_ROOT:-/boot/efi}"
+readonly EFI_DIR="${ESP_ROOT}/EFI/arklinux"
+readonly ENTRY_DIR="${ESP_ROOT}/loader/entries"
+
+if ! mountpoint -q "$ESP_ROOT"; then
+  printf 'stage-kernel: ESP is not mounted at %s; no change made\n' "$ESP_ROOT" >&2
+  exit 0
+fi
+
+kernel_source=""
+initramfs_source=""
+for candidate in /boot/vmlinuz-linux-ark /boot/vmlinuz-linux-lts /boot/vmlinuz-linux; do
+  if [[ -f "$candidate" ]]; then
+    kernel_source="$candidate"
+    break
+  fi
+done
+for candidate in /boot/initramfs-linux-ark.img /boot/initramfs-linux-lts.img /boot/initramfs-linux.img; do
+  if [[ -f "$candidate" ]]; then
+    initramfs_source="$candidate"
+    break
+  fi
+done
+
+if [[ -z "$kernel_source" || -z "$initramfs_source" ]]; then
+  printf 'stage-kernel: ARKlinux kernel or initramfs source is missing\n' >&2
+  exit 1
+fi
+
+install -d -m 0755 "$EFI_DIR" "$ENTRY_DIR"
+install -m 0644 "$kernel_source" "$EFI_DIR/arklinux-kernel"
+install -m 0644 "$initramfs_source" "$EFI_DIR/arklinux-initramfs.img"
+
+for microcode in intel-ucode.img amd-ucode.img; do
+  if [[ -f "/boot/$microcode" ]]; then
+    install -m 0644 "/boot/$microcode" "$EFI_DIR/$microcode"
+  fi
+done
+
+root_uuid=$(findmnt -n -o UUID /)
+{
+  echo 'title   ARKlinux kernel'
+  echo 'linux   /EFI/arklinux/arklinux-kernel'
+  [[ -f "$EFI_DIR/intel-ucode.img" ]] && echo 'initrd  /EFI/arklinux/intel-ucode.img'
+  [[ -f "$EFI_DIR/amd-ucode.img" ]] && echo 'initrd  /EFI/arklinux/amd-ucode.img'
+  echo 'initrd  /EFI/arklinux/arklinux-initramfs.img'
+  echo "options root=UUID=${root_uuid} rootflags=subvol=@ rw audit=1 quiet loglevel=3"
+} > "$ENTRY_DIR/arklinux.conf"
+
+printf 'stage-kernel: staged %s as %s\n' "$kernel_source" "$EFI_DIR/arklinux-kernel"
