@@ -1,0 +1,9 @@
+[Unit]
+Description=Prepare canonical ARKlinux filesystem namespace
+After=local-fs.target
+Before=ark-core.service ark-watchdog.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /usr/local/bin/ark-layout-init
+RemainAfterExit=yes
