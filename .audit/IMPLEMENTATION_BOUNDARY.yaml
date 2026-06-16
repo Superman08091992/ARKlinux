@@ -1,0 +1,33 @@
+schema_version: 1.0.0
+canonical_installed_root: /ark
+legacy_roots:
+  - /opt/ark
+arklinux_owns:
+  - boot_chain
+  - kernel
+  - initramfs
+  - drivers
+  - cpu_scheduling
+  - interrupts
+  - memory
+  - processes
+  - system_calls
+  - namespaces
+  - cgroups
+  - filesystems
+  - block_io
+  - mounts
+  - network_stack
+  - device_interfaces
+  - hardware_discovery
+  - recovery
+  - low_level_security
+  - systemd_substrate
+ark_does_not_own:
+  - kernel
+  - boot_chain
+  - drivers
+  - physical_memory
+  - system_calls
+  - filesystem_implementation
+  - network_stack
