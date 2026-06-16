@@ -1,0 +1,28 @@
+schema_version: 1.0.0
+canonical_root: /ark
+legacy_roots:
+  - /opt/ark
+root_subvolume: '@ark'
+facet_subvolumes:
+  existence: '@existence'
+  location: '@location'
+  ownership: '@ownership'
+  purpose: '@purpose'
+  startup: '@startup'
+  access: '@access'
+  dependencies: '@dependencies'
+  state: '@state'
+  changes: '@changes'
+  authority: '@authority'
+  stop: '@stop'
+  restore: '@restore'
+kernel:
+  canonical_name: ARKlinux kernel
+  esp_artifact: /EFI/arklinux/arklinux-kernel
+  initramfs_artifact: /EFI/arklinux/arklinux-initramfs.img
+  upstream_compatible_sources:
+    - /boot/vmlinuz-linux-ark
+    - /boot/vmlinuz-linux
+compatibility:
+  opt_ark_symlink_target: /ark
+  opt_ark_is_authoritative: false
