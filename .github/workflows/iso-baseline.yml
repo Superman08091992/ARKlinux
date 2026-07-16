@@ -1,0 +1,50 @@
+name: ARKlinux ISO baseline
+
+on:
+  pull_request:
+    paths:
+      - 'archiso/**'
+      - 'build/**'
+      - 'scripts/**'
+      - '.github/workflows/iso-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-boot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install host test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86
+
+      - name: Validate source and profile
+        run: |
+          bash scripts/source-checksums.sh
+          bash scripts/validate-iso-profile.sh
+
+      - name: Build ISO
+        run: bash scripts/build-iso.sh 2>&1 | tee build/mkarchiso.log
+
+      - name: Boot ISO in QEMU TCG
+        run: bash scripts/test-qemu-live-boot.sh build/out/*.iso
+
+      - name: Upload proof artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arklinux-iso-baseline-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            build/out/*.iso
+            build/out/SHA256SUMS
+            build/SOURCE_SHA256SUMS
+            build/mkarchiso.log
+            build/out/test-results/**
