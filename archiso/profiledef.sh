@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034  # Variables are consumed by mkarchiso (external sourcer)
 # ARKLinux archiso profile definition
-# Pinned to Arch Linux 2026.02.01 snapshot — do not change without updating
+# Pinned to Arch Linux 2026.07.15 snapshot — do not change without updating
 # the mirror date in pacman.conf and re-running the package lock procedure.
 
 iso_name="arklinux"
