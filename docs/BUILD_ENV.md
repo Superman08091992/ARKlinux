@@ -38,7 +38,7 @@ The official ISO is produced by **GitHub Actions** running
 |-----------|-------------|----------------------|
 | Base OS | Debian 13 | Arch Linux (archlinux:base-devel) |
 | Package manager | dpkg/apt | pacman |
-| Snapshot mirror | N/A | `archive.archlinux.org/repos/2026/02/01` |
+| Snapshot mirror | N/A | `archive.archlinux.org/repos/2026/07/15` |
 | archiso | Not installed | Installed via pacman |
 | mkarchiso | Not available | `/usr/bin/mkarchiso` |
 | mkinitcpio | Not available | `/usr/bin/mkinitcpio` |
