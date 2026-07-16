@@ -47,6 +47,7 @@ jobs:
           path: |
             build/out/*.iso
             build/out/SHA256SUMS
+            build/out/packages.lock
             build/SOURCE_SHA256SUMS
             build/mkarchiso.log
             build/out/test-results/**
