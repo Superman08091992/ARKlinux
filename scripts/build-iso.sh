@@ -24,4 +24,8 @@ docker run --rm --privileged \
   --volume "${out}:/out" \
   "$image"
 
-sha256sum "${out}"/*.iso | tee "${out}/SHA256SUMS"
+(
+  cd "$out"
+  sha256sum --check SHA256SUMS
+  test -s packages.lock
+)
