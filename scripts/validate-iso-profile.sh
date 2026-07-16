@@ -22,7 +22,7 @@ for path in "${required[@]}"; do
   }
 done
 
-grep -Fq 'archive.archlinux.org/repos/2026/02/01/' "${profile}/pacman.conf"
+grep -Fq 'archive.archlinux.org/repos/2026/07/15/' "${profile}/pacman.conf"
 grep -Fq 'archisolabel=ARKLINUX_1_0' "${profile}/syslinux/syslinux.cfg"
 grep -Fq 'console=ttyS0,115200n8' "${profile}/syslinux/syslinux.cfg"
 
