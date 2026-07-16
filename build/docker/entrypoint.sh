@@ -28,6 +28,10 @@ sed -i "s|@BUILD_ID@|${BUILD_ID}|g" "$PROFILE/airootfs/etc/os-release"
 # Run mkarchiso
 mkarchiso -v -w "$WORK/work" -o "$OUT" "$PROFILE"
 
+# Capture the exact package set from the constructed image root. Failure here
+# is a supply-chain evidence failure and must fail the build.
+arch-chroot "$WORK/work/x86_64/airootfs" pacman -Q | LC_ALL=C sort > "$OUT/packages.lock"
+
 # Checksums
 cd "$OUT"
 ISO=$(ls *.iso | head -1)
