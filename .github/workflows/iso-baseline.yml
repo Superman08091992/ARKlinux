@@ -30,7 +30,9 @@ jobs:
           bash scripts/validate-iso-profile.sh
 
       - name: Build ISO
-        run: bash scripts/build-iso.sh 2>&1 | tee build/mkarchiso.log
+        run: |
+          set -o pipefail
+          bash scripts/build-iso.sh 2>&1 | tee build/mkarchiso.log
 
       - name: Boot ISO in QEMU TCG
         run: bash scripts/test-qemu-live-boot.sh build/out/*.iso
