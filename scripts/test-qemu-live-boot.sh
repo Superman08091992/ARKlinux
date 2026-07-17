@@ -11,12 +11,35 @@ command -v qemu-system-x86_64 >/dev/null || {
 
 out="${ARK_TEST_OUTPUT_DIR:-$(dirname "$iso")/test-results}"
 log="${out}/qemu-live-console.log"
-summary="${out}/qemu-live-summary.txt"
+summary="${out}/qemu-live-boot-summary.json"
 mkdir -p "$out"
 : > "$log"
 
 boot_marker() {
   grep -Eq 'ARKLinux v1\.0\.1|Reached target .*Multi-User|ARKLinux login:' "$log"
+}
+
+write_summary() {
+  local status="$1"
+  local reason="${2:-}"
+  python3 - "$summary" "$status" "$qemu_rc" "$iso" "$reason" <<'PY'
+import json
+import sys
+
+path, status, qemu_exit, iso, reason = sys.argv[1:]
+record = {
+    "test": "qemu-live-boot",
+    "status": status,
+    "qemu_exit": int(qemu_exit),
+    "iso": iso,
+    "real_execution": False,
+}
+if reason:
+    record["reason"] = reason
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(record, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+PY
 }
 
 qemu-system-x86_64 \
@@ -55,21 +78,12 @@ wait "$qemu_pid" 2>/dev/null || true
 trap - EXIT
 
 if boot_marker; then
-  {
-    echo 'test=qemu-live-boot'
-    echo 'status=pass'
-    echo "qemu_exit=${qemu_rc}"
-    echo "iso=${iso}"
-  } | tee "$summary"
+  write_summary pass
+  cat "$summary"
   exit 0
 fi
 
-{
-  echo 'test=qemu-live-boot'
-  echo 'status=fail'
-  echo "qemu_exit=${qemu_rc}"
-  echo "iso=${iso}"
-  echo 'reason=no accepted boot marker in serial console'
-} | tee "$summary" >&2
+write_summary fail 'no accepted boot marker in serial console'
+cat "$summary" >&2
 tail -n 200 "$log" >&2
 exit 1
