@@ -37,15 +37,30 @@ jobs:
       - name: Boot ISO in QEMU TCG
         run: bash scripts/test-qemu-live-boot.sh build/out/*.iso
 
-      - name: Upload proof artifacts
+      - name: Upload complete milestone artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: arklinux-iso-baseline-${{ github.sha }}
-          if-no-files-found: warn
-          retention-days: 14
+          if-no-files-found: error
+          retention-days: 90
           path: |
             build/out/*.iso
+            build/out/SHA256SUMS
+            build/out/packages.lock
+            build/SOURCE_SHA256SUMS
+            build/mkarchiso.log
+            build/out/test-results/**
+            evidence/builds/arklinux-1.0.1/**
+
+      - name: Upload compact evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arklinux-evidence-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 90
+          path: |
             build/out/SHA256SUMS
             build/out/packages.lock
             build/SOURCE_SHA256SUMS
