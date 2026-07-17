@@ -5,6 +5,7 @@ on:
     paths:
       - 'archiso/**'
       - 'build/**'
+      - 'evidence/builds/arklinux-1.0.1/**'
       - 'scripts/**'
       - '.github/workflows/iso-baseline.yml'
   workflow_dispatch:
@@ -28,6 +29,7 @@ jobs:
         run: |
           bash scripts/source-checksums.sh
           bash scripts/validate-iso-profile.sh
+          bash scripts/validate-milestone-evidence.sh
 
       - name: Build ISO
         run: |
@@ -66,3 +68,4 @@ jobs:
             build/SOURCE_SHA256SUMS
             build/mkarchiso.log
             build/out/test-results/**
+            evidence/builds/arklinux-1.0.1/**

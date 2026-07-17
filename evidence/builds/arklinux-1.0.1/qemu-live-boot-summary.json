@@ -1,0 +1,15 @@
+{
+  "test": "qemu-live-boot",
+  "status": "pass",
+  "qemu_exit": 0,
+  "iso": "arklinux-1.0.1-x86_64.iso",
+  "workflow_run_id": 29543177749,
+  "workflow_run_number": 9,
+  "head_commit": "c702e14dbb1314178e7bd357c1c3dc9e9fa1d244",
+  "accepted_marker": "ARKLinux v1.0.1",
+  "real_execution": false,
+  "limitations": [
+    "Live ISO boot only; installation and installed-system reboot were not tested.",
+    "Runtime services, evidence persistence, agents, and target hardware were not tested."
+  ]
+}
