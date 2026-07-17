@@ -7,24 +7,30 @@ set -euo pipefail
 
 SRC="/src"
 OUT="${ARK_OUTPUT_DIR:-/out}"
-WORK="/tmp/arkwork"
+WORK="$(mktemp -d /tmp/arkwork.XXXXXX)"
+PROFILE="${WORK}/profile"
+trap 'umount -R "${WORK}" 2>/dev/null || true; rm -rf "${WORK}"' EXIT
 
-mkdir -p "$OUT" "$WORK"
+mkdir -p "$OUT" "$PROFILE"
 
 echo "[build] ARKLinux ISO builder"
-echo "[build] Profile:  $SRC/archiso"
+echo "[build] Profile:  $PROFILE (copy of $SRC/archiso)"
 echo "[build] Output:   $OUT"
 echo "[build] Snapshot: $(grep 'archive.archlinux.org' /etc/pacman.conf | head -1)"
 
-# Stamp BUILD_ID
+# Build from a private copy so the source checkout may be mounted read-only.
+cp -a "$SRC/archiso/." "$PROFILE/"
+
+# Stamp BUILD_ID only in the build copy.
 BUILD_ID="${BUILD_ID:-$(date -u +%Y%m%dT%H%M%SZ)-local}"
-sed -i "s|@BUILD_ID@|${BUILD_ID}|g" "$SRC/archiso/airootfs/etc/os-release" || true
+sed -i "s|@BUILD_ID@|${BUILD_ID}|g" "$PROFILE/airootfs/etc/os-release"
 
 # Run mkarchiso
-mkarchiso -v -w "$WORK" -o "$OUT" "$SRC/archiso/"
+mkarchiso -v -w "$WORK/work" -o "$OUT" "$PROFILE"
 
-# Record package lock
-arch-chroot "$WORK/airootfs" pacman -Q 2>/dev/null | sort > "$OUT/packages.lock" || true
+# Capture the exact package set from the constructed image root. Failure here
+# is a supply-chain evidence failure and must fail the build.
+arch-chroot "$WORK/work/x86_64/airootfs" pacman -Q | LC_ALL=C sort > "$OUT/packages.lock"
 
 # Checksums
 cd "$OUT"

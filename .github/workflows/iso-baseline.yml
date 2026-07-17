@@ -1,0 +1,71 @@
+name: ARKlinux ISO baseline
+
+on:
+  pull_request:
+    paths:
+      - 'archiso/**'
+      - 'build/**'
+      - 'evidence/builds/arklinux-1.0.1/**'
+      - 'scripts/**'
+      - '.github/workflows/iso-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-boot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install host test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86
+
+      - name: Validate source and profile
+        run: |
+          bash scripts/source-checksums.sh
+          bash scripts/validate-iso-profile.sh
+          bash scripts/validate-milestone-evidence.sh
+
+      - name: Build ISO
+        run: |
+          set -o pipefail
+          bash scripts/build-iso.sh 2>&1 | tee build/mkarchiso.log
+
+      - name: Boot ISO in QEMU TCG
+        run: bash scripts/test-qemu-live-boot.sh build/out/*.iso
+
+      - name: Upload complete milestone artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arklinux-iso-baseline-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            build/out/*.iso
+            build/out/SHA256SUMS
+            build/out/packages.lock
+            build/SOURCE_SHA256SUMS
+            build/mkarchiso.log
+            build/out/test-results/**
+            evidence/builds/arklinux-1.0.1/**
+
+      - name: Upload compact evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arklinux-evidence-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            build/out/SHA256SUMS
+            build/out/packages.lock
+            build/SOURCE_SHA256SUMS
+            build/mkarchiso.log
+            build/out/test-results/**
+            evidence/builds/arklinux-1.0.1/**

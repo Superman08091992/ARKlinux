@@ -6,14 +6,14 @@
 # The --privileged flag is required because mkarchiso needs loop devices
 # to build the squashfs and ISO filesystem.
 #
-# Pinned to the 2026-02-01 Arch Linux Archive snapshot via ARCH_SNAPSHOT ARG.
+# Pinned to the 2026-07-15 Arch Linux Archive snapshot via ARCH_SNAPSHOT ARG.
 # To upgrade the snapshot:
 #   1. Change ARCH_SNAPSHOT below
 #   2. Run build/scripts/pin-packages.sh <NEW_DATE> to regenerate packages.lock
 #   3. Update ARCH_SNAPSHOT in .github/workflows/build-release.yml
 #   4. Commit all three changes together
 
-ARG ARCH_SNAPSHOT=2026/02/01
+ARG ARCH_SNAPSHOT=2026/07/15
 
 FROM archlinux:base
 

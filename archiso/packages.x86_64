@@ -1,7 +1,7 @@
-# ARKLinux package list — pinned to Arch 2026.02.01 snapshot
-# Generated: 2026-02-23
-# Mirror: https://archive.archlinux.org/repos/2026/02/01/$repo/os/$arch
-# Kernel: linux 6.18.9.arch1-2
+# ARKLinux package names — resolved from the pinned Arch 2026.07.15 snapshot
+# Snapshot advanced: 2026-07-16 after the former snapshot failed current
+# Arch keyring validation. Exact resolved versions are captured after build.
+# Mirror: https://archive.archlinux.org/repos/2026/07/15/$repo/os/$arch
 # To regenerate this list against a new snapshot:
 #   ./build/scripts/pin-packages.sh <YYYY/MM/DD>
 

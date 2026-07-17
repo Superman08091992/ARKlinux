@@ -52,7 +52,7 @@ installs **systemd-boot**, and generates `/etc/fstab`.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ARKLinux (host OS — Arch Linux base, kernel 6.18.9)        │
+│  ARKLinux (host OS — pinned Arch-derived package base)      │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │  nftables — default-deny, loopback-only             │    │
 │  └─────────────────────────────────────────────────────┘    │
@@ -84,7 +84,8 @@ docker run --privileged \
   arklinux-builder
 ```
 
-All packages are pinned to the **Arch Linux Archive snapshot 2026-02-01**.
+Packages are resolved from the **Arch Linux Archive snapshot 2026-07-15**.
+Exact resolved versions and hashes are build evidence, not documentation claims.
 CI (GitHub Actions) is the **only path** to an official signed release.
 
 → [docs/BUILDING.md](docs/BUILDING.md) — full build, verify, and reproduce guide.

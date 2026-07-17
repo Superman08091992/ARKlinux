@@ -53,7 +53,8 @@ The snapshot date is set in **two places** — keep them in sync:
 | `archiso/pacman.conf` | `Server = https://archive.archlinux.org/repos/YYYY/MM/DD/...` |
 | `.github/workflows/build-release.yml` | `ARCH_SNAPSHOT: "YYYY/MM/DD"` |
 
-**Current snapshot:** `2026/02/01` (Kernel 6.18.9-arch1-2)
+**Current snapshot:** `2026/07/15`. The exact resolved kernel and package
+versions are evidence outputs of the build and must not be predicted here.
 
 ### To advance the snapshot:
 
