@@ -1,12 +1,12 @@
 ARKLinux Software License Agreement
 Version 1.0 — Effective 2026-02-23
 
-Copyright (c) 2026 Superman08091992 and the ARKLinux Contributors.
+Copyright (c) 2026 Adam Barnes and the ARKlinux Contributors.
 All rights reserved.
 
-═══════════════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PART I — OPEN SOURCE COMPONENTS
-═══════════════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ARKLinux is an Arch Linux–based distribution.  The base operating system,
 kernel, system libraries, and third-party packages are distributed under their
@@ -20,9 +20,9 @@ Source code for all GPL-licensed components is available via the upstream Arch
 Linux Archive snapshot pinned in archiso/pacman.conf and build/lock/packages.lock
 at the exact date stamped in each release.
 
-═══════════════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PART II — ARK-ORIGINAL WORKS (Permissive / MIT-style)
-═══════════════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 The following files are original works authored specifically for ARKLinux and
 are licensed under the MIT License:
@@ -71,13 +71,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-═══════════════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PART III — ARK CONCEPT AND BRANDING (Proprietary)
-═══════════════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 The "A.R.K." concept, the ARKLinux name, the ARKLinux logo (if any), the
-CPA/MDS/SAL/VerifiedClaim JSON schemas, and the ARK operator identity model
-are proprietary to Superman08091992 and are NOT licensed for redistribution or
+CPL/MDS/SAL/VerifiedClaim JSON schemas, and the ARK operator identity model
+are proprietary to Adam Barnes and are NOT licensed for redistribution or
 derivative branding without explicit written permission.
 
 You MAY:
@@ -92,9 +92,9 @@ You MAY NOT:
   • Use the ARK logo or trade dress in any derivative work.
   • Claim official endorsement or certification from the ARKLinux project.
 
-═══════════════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PART IV — RELEASE INTEGRITY AND SUPPLY-CHAIN TERMS
-═══════════════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Every official ARKLinux release is signed with cosign/sigstore and/or a project
 GPG key.  Release artifacts attached to https://github.com/Superman08091992/ARKlinux
@@ -113,9 +113,9 @@ Unofficial builds (ISOs not produced by the GitHub Actions workflow in
 .github/workflows/build-release.yml and not signed by the project key) are NOT
 endorsed and carry no warranty.
 
-═══════════════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PART V — DISCLAIMER AND LIMITATION OF LIABILITY
-═══════════════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 THIS SOFTWARE IS PROVIDED FOR EXPERIMENTAL AND EDUCATIONAL PURPOSES.
 THE AUTHORS MAKE NO REPRESENTATIONS OR WARRANTIES OF ANY KIND, EXPRESS OR
@@ -128,26 +128,26 @@ INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES ARISING
 FROM THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 
-═══════════════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 THIRD-PARTY ACKNOWLEDGEMENTS
-═══════════════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ARKLinux builds upon the following upstream projects (non-exhaustive):
 
-  • Arch Linux          — https://archlinux.org/              (GPL variants)
-  • Linux Kernel        — https://kernel.org/                 (GPL-2.0-only)
-  • systemd             — https://systemd.io/                 (LGPL-2.1)
+  • Arch Linux          — https://archlinux.org/             (GPL variants)
+  • Linux Kernel        — https://kernel.org/                (GPL-2.0-only)
+  • systemd             — https://systemd.io/                (LGPL-2.1)
   • nftables            — https://netfilter.org/projects/nftables/ (GPL-2.0)
   • GRUB 2              — https://www.gnu.org/software/grub/  (GPL-3.0)
-  • Python              — https://python.org/                 (PSF-2.0)
-  • mkinitcpio          — https://archlinux.org/              (GPL-2.0)
-  • archiso             — https://archlinux.org/              (GPL-3.0)
-  • Btrfs               — https://btrfs.readthedocs.io/       (GPL-2.0)
-  • cosign / sigstore   — https://sigstore.dev/               (Apache-2.0)
-  • Syft (SBOM)         — https://github.com/anchore/syft     (Apache-2.0)
+  • Python              — https://python.org/                (PSF-2.0)
+  • mkinitcpio          — https://archlinux.org/             (GPL-2.0)
+  • archiso             — https://archlinux.org/             (GPL-3.0)
+  • Btrfs               — https://btrfs.readthedocs.io/      (GPL-2.0)
+  • cosign / sigstore   — https://sigstore.dev/              (Apache-2.0)
+  • Syft (SBOM)         — https://github.com/anchore/syft    (Apache-2.0)
 
 Full SBOM is available in the GitHub Release assets for each release tag.
 
-═══════════════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 END OF LICENSE
-═══════════════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
