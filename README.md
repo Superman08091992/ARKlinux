@@ -3,6 +3,9 @@
 > A hardened, self-governing Arch Linux–based OS built as the native substrate
 > for the **A.R.K.** (Autonomous Reasoning Kernel) platform.
 
+**Author:** Adam Barnes
+**License:** [Multi-part — MIT for original works, proprietary branding](LICENSE)
+
 [![Build](https://github.com/Superman08091992/ARKlinux/actions/workflows/build-release.yml/badge.svg)](https://github.com/Superman08091992/ARKlinux/actions/workflows/build-release.yml)
 
 ---
@@ -51,24 +54,24 @@ installs **systemd-boot**, and generates `/etc/fstab`.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  ARKLinux (host OS — Arch Linux base, kernel 6.18.9)        │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  nftables — default-deny, loopback-only             │    │
-│  └─────────────────────────────────────────────────────┘    │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  /opt/ark (canonical state root, ark:ark 750)       │    │
-│  │  ├── models/     ingest/    bus/    memory/          │    │
-│  │  ├── logs/       agents/    run/    backup/          │    │
-│  │  ├── secrets/    id/        quarantine/ (700)        │    │
-│  │  └── aletheia/  ─►  audit/  manifests/ (immutable)  │    │
-│  └─────────────────────────────────────────────────────┘    │
-│  ┌────────────────────┐  ┌──────────────────────────────┐   │
-│  │  ark-core.service  │  │  ark-watchdog.service        │   │
-│  │  (Python, ark uid) │  │  SHA-256 aletheia tree/60 s  │   │
-│  │  heartbeat + state │  │  → quarantine on violation   │   │
-│  └────────────────────┘  └──────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  ARKLinux (host OS — Arch Linux base, kernel 6.18.9)               │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │  nftables — default-deny, loopback-only                         ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │  /opt/ark (canonical state root, ark:ark 750)                   ││
+│  │  ├── models/    ingest/    bus/    memory/                      ││
+│  │  ├── logs/      agents/     run/    backup/                     ││
+│  │  ├── secrets/   id/        quarantine/ (700)                    ││
+│  │  └── aletheia/  ── audit/  manifests/ (immutable)               ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│  ┌──────────────────────┐  ┌───────────────────────────────────────┐│
+│  │  ark-core.service    │  │  ark-watchdog.service                 ││
+│  │  (Python, ark uid)   │  │  SHA-256 aletheia tree/60 s           ││
+│  │  heartbeat + state   │  │  → quarantine on violation            ││
+│  └──────────────────────┘  └───────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -94,7 +97,7 @@ CI (GitHub Actions) is the **only path** to an official signed release.
 ## Supply chain
 
 | Layer | Tool / mechanism |
-|-------|-----------------|
+|-------|------------------|
 | Build environment | `archlinux:base` container, pinned Arch Archive snapshot |
 | Package lock | `build/lock/packages.lock` (regenerate: `./build/scripts/pin-packages.sh`) |
 | Static analysis | ShellCheck (all bash scripts), Python `py_compile` |
@@ -109,7 +112,7 @@ CI (GitHub Actions) is the **only path** to an official signed release.
 ## Security profile
 
 | Feature | Implementation |
-|---------|---------------|
+|---------|----------------|
 | Firewall | nftables `policy drop` on all chains, loopback-only |
 | Service isolation | `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict`, `CapabilityBoundingSet=` |
 | Non-root services | `ark` system user (UID 973), no login shell |
@@ -122,31 +125,31 @@ CI (GitHub Actions) is the **only path** to an official signed release.
 ## Repository layout
 
 ```
-archiso/                    ← mkarchiso profile (THE authoritative build input)
-│  profiledef.sh            ← ISO metadata and file permissions
-│  packages.x86_64          ← Pinned package list
-│  pacman.conf              ← Arch Archive snapshot mirror
+archiso/                        → mkarchiso profile (THE authoritative build input)
+│  profiledef.sh                → ISO metadata and file permissions
+│  packages.x86_64              → Pinned package list
+│  pacman.conf                  → Arch Archive snapshot mirror
 │  airootfs/
 │    etc/
-│      customize_airootfs.sh ← User creation, service enablement, assertions
-│      mkinitcpio.conf       ← archiso live-boot hooks
-│      nftables.conf         ← Default-deny firewall
-│      systemd/system/       ← ark-core, ark-watchdog, ark-quarantine, ark.target
+│      customize_airootfs.sh    → User creation, service enablement, assertions
+│      mkinitcpio.conf          → archiso live-boot hooks
+│      nftables.conf            → Default-deny firewall
+│      systemd/system/          → ark-core, ark-watchdog, ark-quarantine, ark.target
 │    usr/local/bin/
-│      ark-install           ← BTRFS + systemd-boot installer
-│      ark-core              ← Core agent (Python)
-│      ark-watchdog          ← Integrity watchdog (Python)
-│      ark-verify-perms      ← Permission auditor
-│  efiboot/loader/           ← systemd-boot entries (UEFI)
-│  syslinux/                 ← syslinux config (BIOS)
+│      ark-install              → BTRFS + systemd-boot installer
+│      ark-core                 → Core agent (Python)
+│      ark-watchdog             → Integrity watchdog (Python)
+│      ark-verify-perms         → Permission auditor
+│  efiboot/loader/              → systemd-boot entries (UEFI)
+│  syslinux/                    → syslinux config (BIOS)
 .github/workflows/
-│  build-release.yml        ← CI: lint → build → SBOM → sign → release
+│  build-release.yml            → CI: lint → build → SBOM → sign → release
 build/
-│  docker/Dockerfile        ← Reproducible build container
-│  scripts/pin-packages.sh  ← Regenerate packages.lock
-│  lock/packages.lock       ← Exact package versions (generated)
+│  docker/Dockerfile            → Reproducible build container
+│  scripts/pin-packages.sh      → Regenerate packages.lock
+│  lock/packages.lock           → Exact package versions (generated)
 docs/
-│  BUILDING.md              ← One-command build, verify, reproduce
+│  BUILDING.md                  → One-command build, verify, reproduce
 ```
 
 ---
