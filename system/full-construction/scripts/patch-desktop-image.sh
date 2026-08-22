@@ -96,10 +96,24 @@ rm -f \
 # on its mounted subvolumes and is not replaced by this rootfs overlay.
 cp -a "$ROOT/rootfs/." "$MNT/"
 
+# The proven image already has an operator home directory. Updating /etc/skel
+# does not retroactively update that user's Labwc autostart, and Labwc prefers
+# $HOME/.config/labwc over /etc/xdg. Install the ARK session into the existing
+# operator profile explicitly while preserving the prior scaffold for evidence.
+OP_HOME="$MNT/home/operator"
+OP_AUTOSTART="$OP_HOME/.config/labwc/autostart"
+mkdir -p "$(dirname "$OP_AUTOSTART")"
+if [[ -f "$OP_AUTOSTART" ]] && ! cmp -s "$ROOT/rootfs/etc/skel/.config/labwc/autostart" "$OP_AUTOSTART"; then
+  cp -a "$OP_AUTOSTART" "$OP_AUTOSTART.pre-ark-desktop"
+fi
+install -m0644 "$ROOT/rootfs/etc/skel/.config/labwc/autostart" "$OP_AUTOSTART"
+arch-chroot "$MNT" chown -R operator:operator /home/operator/.config
+
 # Ensure the installed operator can reach the local privileged broker.
 arch-chroot "$MNT" usermod -aG wheel operator
 
-# Verify service and Python syntax inside the image before detaching it.
+# Verify service, Python syntax, and the installed operator session before
+# detaching the image.
 arch-chroot "$MNT" systemd-analyze verify \
   /etc/systemd/system/ark-desktop-rootd.service \
   /etc/systemd/system/greetd.service
@@ -107,6 +121,7 @@ arch-chroot "$MNT" python -m py_compile \
   /usr/lib/ark-desktop/ark-desktop.py \
   /usr/lib/ark-desktop/ark-rootd.py \
   /usr/lib/ark-desktop/ark-shell.py
+arch-chroot "$MNT" grep -q 'ark-desktop-start' /home/operator/.config/labwc/autostart
 
 sync
 cleanup
