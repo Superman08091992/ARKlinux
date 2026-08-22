@@ -36,8 +36,6 @@ wayland
 xorg-xwayland
 labwc
 foot
-waybar
-wofi
 greetd
 pipewire
 pipewire-alsa
@@ -46,6 +44,13 @@ wireplumber
 alsa-utils
 libinput
 python
+python-gobject
+gtk4
+gtk4-layer-shell
+thunar
+firefox
+xdg-utils
+brightnessctl
 jq
 rsync
 tar
