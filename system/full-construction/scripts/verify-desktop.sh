@@ -54,8 +54,11 @@ else
 fi
 
 STARTER="$ROOT/rootfs/usr/local/bin/ark-desktop-start"
-grep -q 'ark-desktop/session.log' "$STARTER" \
-  && pass "desktop startup logging enabled" || fail "desktop startup logging missing"
+if grep -q 'STATE_DIR=.*ark-desktop' "$STARTER" && grep -q 'session.log' "$STARTER"; then
+  pass "desktop startup logging enabled"
+else
+  fail "desktop startup logging missing"
+fi
 
 SHELL="$ROOT/rootfs/usr/lib/ark-desktop/ark-shell.py"
 grep -q 'CDLL("libgtk4-layer-shell.so")' "$SHELL" \
