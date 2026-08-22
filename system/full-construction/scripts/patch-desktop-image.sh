@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_IMG="${1:-}"
 DEST_IMG="${2:-$ROOT/out/arklinux-x86_64.raw}"
 SNAP="${ARKLINUX_ARCH_SNAPSHOT:-2026/08/20}"
+REUSE="${ARKLINUX_DESKTOP_REUSE:-0}"
 WORK="$ROOT/.work/desktop-patch"
 MNT="$WORK/mnt"
 LOOP=""
@@ -31,10 +32,20 @@ trap cleanup EXIT
 
 rm -rf "$WORK"
 mkdir -p "$WORK" "$MNT"
-rm -f "$DEST_IMG"
 
-printf 'Copying proven image:\n  %s\n->%s\n' "$SOURCE_IMG" "$DEST_IMG"
-cp --reflink=auto --sparse=always "$SOURCE_IMG" "$DEST_IMG"
+if [[ "$REUSE" == "1" && -f "$DEST_IMG" ]]; then
+  SOURCE_SIZE="$(stat -c '%s' "$SOURCE_IMG")"
+  DEST_SIZE="$(stat -c '%s' "$DEST_IMG")"
+  [[ "$SOURCE_SIZE" == "$DEST_SIZE" ]] || {
+    echo "ERROR: existing destination size differs from source; refusing reuse" >&2
+    exit 1
+  }
+  printf 'Reusing existing copied image:\n  %s\n' "$DEST_IMG"
+else
+  rm -f "$DEST_IMG"
+  printf 'Copying proven image:\n  %s\n->%s\n' "$SOURCE_IMG" "$DEST_IMG"
+  cp --reflink=auto --sparse=always "$SOURCE_IMG" "$DEST_IMG"
+fi
 
 LOOP="$(losetup --find --show --partscan "$DEST_IMG")"
 mount -o noatime,compress=zstd:3,subvol=@ "${LOOP}p2" "$MNT"
@@ -52,12 +63,14 @@ Server = https://archive.archlinux.org/repos/${SNAP}/\$repo/os/\$arch
 EOF
 cp "$MNT/etc/pacman.conf" "$WORK/pacman-desktop.conf"
 sed -i 's|^Include = /etc/pacman.d/mirrorlist|Include = /etc/pacman.d/arklinux-desktop-mirrorlist|' "$WORK/pacman-desktop.conf"
-cp "$WORK/pacman-desktop.conf" "$MNT/tmp/arklinux-desktop-pacman.conf"
+install -Dm0644 "$WORK/pacman-desktop.conf" "$MNT/etc/pacman.d/arklinux-desktop-pacman.conf"
 
 DESKTOP_PKGS=(gtk4 gtk4-layer-shell python-gobject thunar firefox)
-arch-chroot "$MNT" pacman -Syy --noconfirm --config /tmp/arklinux-desktop-pacman.conf
-arch-chroot "$MNT" pacman -S --needed --noconfirm --config /tmp/arklinux-desktop-pacman.conf "${DESKTOP_PKGS[@]}"
-rm -f "$MNT/tmp/arklinux-desktop-pacman.conf" "$MNT/etc/pacman.d/arklinux-desktop-mirrorlist"
+arch-chroot "$MNT" pacman -Syy --noconfirm --config /etc/pacman.d/arklinux-desktop-pacman.conf
+arch-chroot "$MNT" pacman -S --needed --noconfirm --config /etc/pacman.d/arklinux-desktop-pacman.conf "${DESKTOP_PKGS[@]}"
+rm -f \
+  "$MNT/etc/pacman.d/arklinux-desktop-pacman.conf" \
+  "$MNT/etc/pacman.d/arklinux-desktop-mirrorlist"
 
 # Overlay ARKlinux-owned desktop/session files. The overlay does not contain
 # persistent /ark state and therefore does not replace Btrfs state subvolumes.
