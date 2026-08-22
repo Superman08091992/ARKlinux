@@ -6,3 +6,5 @@ __pycache__/
 /tmp/
 *.log
 build/work/
+/system/full-construction/.work/
+/system/full-construction/out/

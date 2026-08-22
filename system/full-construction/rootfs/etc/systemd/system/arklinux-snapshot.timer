@@ -1,0 +1,8 @@
+[Unit]
+Description=ARKlinux daily system snapshot
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=10m
+[Install]
+WantedBy=timers.target

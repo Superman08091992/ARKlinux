@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+DEST="/.snapshots/system-$STAMP"
+btrfs subvolume snapshot -r / "$DEST"
+printf '%s\n' "$DEST"

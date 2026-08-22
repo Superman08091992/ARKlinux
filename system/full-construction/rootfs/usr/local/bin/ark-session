@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -e
+
+export XDG_SESSION_TYPE=wayland
+export XDG_SESSION_DESKTOP=ARKlinux
+export XDG_CURRENT_DESKTOP=ARKlinux
+export LIBSEAT_BACKEND=logind
+
+exec dbus-run-session labwc

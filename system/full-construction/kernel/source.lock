@@ -1,0 +1,8 @@
+KERNEL_VERSION=6.18.9
+KERNEL_URL=https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.9.tar.xz
+KERNEL_SHA256=030115ff8fb4cb536d8449dc40ebc3e314e86ba1b316a6ae21091a11cc930578
+ARCH_RELEASE=v6.18.9-arch1
+ARCH_PATCH_URL=https://github.com/archlinux/linux/releases/download/v6.18.9-arch1/linux-v6.18.9-arch1.patch.zst
+ARCH_PATCH_SHA256=4815407239a6df15f8e0362ff652f9faf2e558fd774b08645e80ca664128e390
+ARCH_CONFIG_URL=https://gitlab.archlinux.org/archlinux/packaging/packages/linux/-/raw/6.18.9.arch1-2/config
+ARCH_CONFIG_SHA256=9fed188f89847418aaf6416b64457a30bee34dcd0fa42a84dbd0f4dfca063402

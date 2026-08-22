@@ -1,0 +1,7 @@
+[Unit]
+Description=A.R.K. coordinated process architecture
+Requires=ark-core.target
+Wants=ark-lifecycle.target ark-cognition.target ark-correspondence.target ark-effect.target ark-intake.target ark-model.target ark-io.target
+After=local-fs.target systemd-tmpfiles-setup.service
+[Install]
+WantedBy=multi-user.target

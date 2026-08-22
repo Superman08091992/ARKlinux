@@ -1,0 +1,6 @@
+[Unit]
+Description=ARKlinux Btrfs system snapshot
+ConditionPathIsMountPoint=/.snapshots
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/arklinux-snapshot
