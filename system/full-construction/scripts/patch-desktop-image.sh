@@ -49,12 +49,23 @@ fi
 
 LOOP="$(losetup --find --show --partscan "$DEST_IMG")"
 mount -o noatime,compress=zstd:3,subvol=@ "${LOOP}p2" "$MNT"
+
+# The image's package database, package cache, /var, /home, /ark state, and
+# other persistent paths live on their own Btrfs subvolumes. Mount the same
+# authoritative topology used at normal boot before entering the chroot.
+while IFS=$'\t' read -r subvol mp opts owner group mode cls; do
+  [[ -z "${subvol:-}" || "$subvol" == \#* || "$mp" == "/" ]] && continue
+  mkdir -p "$MNT$mp"
+  mount -o "subvol=$subvol,$opts" "${LOOP}p2" "$MNT$mp"
+done < "$ROOT/config/subvolumes.tsv"
+
 mkdir -p "$MNT/boot"
 mount "${LOOP}p1" "$MNT/boot"
 
 [[ -f "$MNT/etc/os-release" ]] || { echo "ERROR: copied image does not contain ARKlinux rootfs" >&2; exit 1; }
 grep -q '^ID=arklinux$' "$MNT/etc/os-release" || { echo "ERROR: destination is not an ARKlinux image" >&2; exit 1; }
 [[ -f "$MNT/boot/arklinux-kernel" ]] || { echo "ERROR: ARKlinux kernel missing from copied image" >&2; exit 1; }
+[[ -d "$MNT/var/lib/pacman" ]] || { echo "ERROR: package database unavailable after topology mount" >&2; exit 1; }
 
 # Install only desktop dependencies against the same pinned userspace snapshot
 # used by the proven construction image. This avoids an unrelated rolling upgrade.
@@ -72,8 +83,8 @@ rm -f \
   "$MNT/etc/pacman.d/arklinux-desktop-pacman.conf" \
   "$MNT/etc/pacman.d/arklinux-desktop-mirrorlist"
 
-# Overlay ARKlinux-owned desktop/session files. The overlay does not contain
-# persistent /ark state and therefore does not replace Btrfs state subvolumes.
+# Overlay ARKlinux-owned desktop/session files. Persistent /ark state remains
+# on its mounted subvolumes and is not replaced by this rootfs overlay.
 cp -a "$ROOT/rootfs/." "$MNT/"
 
 # Ensure the installed operator can reach the local privileged broker.
