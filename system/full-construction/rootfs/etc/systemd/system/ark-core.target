@@ -1,0 +1,4 @@
+[Unit]
+Description=A.R.K. Core Process Group
+Requires=ark-bus.service arkd.service ark-watchdog.service
+After=local-fs.target

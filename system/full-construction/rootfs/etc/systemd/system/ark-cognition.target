@@ -1,0 +1,4 @@
+[Unit]
+Description=A.R.K. Cognition Process Group
+Requires=ark-joey.service
+After=local-fs.target

@@ -1,0 +1,6 @@
+ALL_config="/etc/mkinitcpio.conf"
+ALL_kver="/boot/arklinux-kernel"
+PRESETS=('default' 'fallback')
+default_image="/boot/initramfs-arklinux.img"
+fallback_image="/boot/initramfs-arklinux-fallback.img"
+fallback_options="-S autodetect"
