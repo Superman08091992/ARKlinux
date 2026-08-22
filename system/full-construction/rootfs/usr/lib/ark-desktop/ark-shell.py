@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """ARKlinux shell bootstrap.
 
-Keeps the desktop implementation importable while applying compositor-specific
-layer-shell policy in one small bootstrap: the background never takes keyboard
-focus, while the exclusive bottom panel may request it for the search field.
+Preloads GTK4 Layer Shell before GTK/Wayland is imported, then loads the native
+ARKlinux desktop implementation and applies compositor-specific layer policy.
 """
+from ctypes import CDLL
 import importlib.util
+
+# gtk4-layer-shell's Python integration requires the layer-shell library to be
+# loaded before GTK pulls in libwayland-client.
+CDLL("libgtk4-layer-shell.so")
 
 SPEC = importlib.util.spec_from_file_location(
     "ark_desktop_impl", "/usr/lib/ark-desktop/ark-desktop.py"
