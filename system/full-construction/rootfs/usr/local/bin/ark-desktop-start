@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -u
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/ark-desktop"
+LOG="$STATE_DIR/session.log"
+mkdir -p "$STATE_DIR"
+
+{
+  printf '\n=== ARKlinux desktop start %s ===\n' "$(date -Ins)"
+  printf 'user=%s uid=%s wayland=%s display=%s\n' \
+    "${USER:-unknown}" "$(id -u)" "${WAYLAND_DISPLAY:-unset}" "${DISPLAY:-unset}"
+  exec /usr/bin/python /usr/lib/ark-desktop/ark-shell.py
+} >>"$LOG" 2>&1
