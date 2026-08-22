@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_native_desktop_files_exist():
     required = [
         ROOT / "rootfs/usr/lib/ark-desktop/ark-desktop.py",
+        ROOT / "rootfs/usr/lib/ark-desktop/ark-shell.py",
         ROOT / "rootfs/usr/lib/ark-desktop/ark-rootd.py",
         ROOT / "rootfs/etc/systemd/system/ark-desktop-rootd.service",
         ROOT / "rootfs/etc/systemd/system/greetd.service.d/ark-desktop.conf",
@@ -40,27 +41,24 @@ def test_desktop_packages_are_declared():
 
 def test_labwc_starts_ark_desktop_only():
     autostart = (ROOT / "rootfs/etc/skel/.config/labwc/autostart").read_text()
-    assert "/usr/lib/ark-desktop/ark-desktop.py" in autostart
+    assert "/usr/lib/ark-desktop/ark-shell.py" in autostart
     assert "waybar" not in autostart
     assert "foot &" not in autostart
 
 
 def test_root_broker_is_local_unix_socket():
     source = (ROOT / "rootfs/usr/lib/ark-desktop/ark-rootd.py").read_text()
-    assert 'socket.AF_UNIX' in source
-    assert '/run/ark-desktop/root.sock' in source
-    assert 'SO_PEERCRED' in source
-    assert 'WHEEL_GID' in source
+    assert "socket.AF_UNIX" in source
+    assert "/run/ark-desktop/root.sock" in source
+    assert "SO_PEERCRED" in source
+    assert "WHEEL_GID" in source
 
 
 def test_desktop_python_parses():
-    compile(
-        (ROOT / "rootfs/usr/lib/ark-desktop/ark-desktop.py").read_text(),
-        "ark-desktop.py",
-        "exec",
-    )
-    compile(
-        (ROOT / "rootfs/usr/lib/ark-desktop/ark-rootd.py").read_text(),
-        "ark-rootd.py",
-        "exec",
-    )
+    for rel in (
+        "rootfs/usr/lib/ark-desktop/ark-desktop.py",
+        "rootfs/usr/lib/ark-desktop/ark-shell.py",
+        "rootfs/usr/lib/ark-desktop/ark-rootd.py",
+    ):
+        path = ROOT / rel
+        compile(path.read_text(), path.name, "exec")
