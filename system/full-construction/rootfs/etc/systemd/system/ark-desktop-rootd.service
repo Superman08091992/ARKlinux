@@ -1,0 +1,18 @@
+[Unit]
+Description=ARKlinux Desktop Root Broker
+After=local-fs.target
+Before=greetd.service
+
+[Service]
+Type=simple
+User=root
+Group=wheel
+UMask=0007
+RuntimeDirectory=ark-desktop
+RuntimeDirectoryMode=0770
+ExecStart=/usr/bin/python /usr/lib/ark-desktop/ark-rootd.py
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target
