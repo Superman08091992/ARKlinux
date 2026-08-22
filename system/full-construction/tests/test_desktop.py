@@ -8,6 +8,7 @@ def test_native_desktop_files_exist():
         ROOT / "rootfs/usr/lib/ark-desktop/ark-desktop.py",
         ROOT / "rootfs/usr/lib/ark-desktop/ark-shell.py",
         ROOT / "rootfs/usr/lib/ark-desktop/ark-rootd.py",
+        ROOT / "rootfs/usr/local/bin/ark-desktop-start",
         ROOT / "rootfs/etc/systemd/system/ark-desktop-rootd.service",
         ROOT / "rootfs/etc/systemd/system/greetd.service.d/ark-desktop.conf",
         ROOT / "rootfs/usr/share/ark-desktop/icons/ark.svg",
@@ -41,9 +42,21 @@ def test_desktop_packages_are_declared():
 
 def test_labwc_starts_ark_desktop_only():
     autostart = (ROOT / "rootfs/etc/skel/.config/labwc/autostart").read_text()
-    assert "/usr/lib/ark-desktop/ark-shell.py" in autostart
+    assert "ark-desktop-start" in autostart
     assert "waybar" not in autostart
     assert "foot &" not in autostart
+
+
+def test_layer_shell_is_preloaded_before_gtk_imports():
+    source = (ROOT / "rootfs/usr/lib/ark-desktop/ark-shell.py").read_text()
+    assert 'CDLL("libgtk4-layer-shell.so")' in source
+    assert source.index('CDLL("libgtk4-layer-shell.so")') < source.index("SPEC =")
+
+
+def test_existing_operator_session_is_updated_by_patcher():
+    source = (ROOT / "scripts/patch-desktop-image.sh").read_text()
+    assert "/home/operator/.config/labwc/autostart" in source
+    assert "pre-ark-desktop" in source
 
 
 def test_root_broker_is_local_unix_socket():
