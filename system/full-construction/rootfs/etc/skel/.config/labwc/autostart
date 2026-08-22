@@ -1,2 +1,1 @@
-waybar &
-foot &
+/usr/bin/python /usr/lib/ark-desktop/ark-desktop.py &
