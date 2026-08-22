@@ -11,15 +11,18 @@ required=(
   rootfs/usr/lib/ark-desktop/ark-desktop.py
   rootfs/usr/lib/ark-desktop/ark-rootd.py
   rootfs/usr/lib/ark-desktop/ark-shell.py
+  rootfs/usr/lib/ark-desktop/ark-agentctl.py
   rootfs/usr/local/bin/ark-desktop-start
   rootfs/etc/systemd/system/ark-desktop-rootd.service
   rootfs/etc/systemd/system/greetd.service.d/ark-desktop.conf
+  rootfs/usr/share/applications/ark-agents.desktop
   rootfs/usr/share/ark-desktop/icons/ark.svg
   rootfs/usr/share/ark-desktop/icons/computer.svg
   rootfs/usr/share/ark-desktop/icons/files.svg
   rootfs/usr/share/ark-desktop/icons/browser.svg
   rootfs/usr/share/ark-desktop/icons/terminal.svg
   rootfs/usr/share/ark-desktop/icons/settings.svg
+  rootfs/usr/share/ark-desktop/icons/agents.svg
 )
 
 for rel in "${required[@]}"; do
@@ -31,6 +34,7 @@ python -m py_compile \
   "$ROOT/rootfs/usr/lib/ark-desktop/ark-desktop.py" \
   "$ROOT/rootfs/usr/lib/ark-desktop/ark-rootd.py" \
   "$ROOT/rootfs/usr/lib/ark-desktop/ark-shell.py" \
+  "$ROOT/rootfs/usr/lib/ark-desktop/ark-agentctl.py" \
   && pass "desktop Python syntax" || fail "desktop Python syntax"
 
 PKGS="$ROOT/config/packages.x86_64"
@@ -82,6 +86,24 @@ grep -q '^User=root$' "$SERVICE" \
 DROPIN="$ROOT/rootfs/etc/systemd/system/greetd.service.d/ark-desktop.conf"
 grep -q 'ark-desktop-rootd.service' "$DROPIN" \
   && pass "graphical login requires root broker" || fail "greetd/root broker dependency missing"
+
+AGENTCTL="$ROOT/rootfs/usr/lib/ark-desktop/ark-agentctl.py"
+AGENTAPP="$ROOT/rootfs/usr/share/applications/ark-agents.desktop"
+if grep -q 'ark-kyle.service' "$AGENTCTL" \
+  && grep -q 'ark-joey.service' "$AGENTCTL" \
+  && grep -q 'ark-hrm.service' "$AGENTCTL" \
+  && grep -q 'ark-kenny.service' "$AGENTCTL" \
+  && grep -q '"op": "service"' "$AGENTCTL"; then
+  pass "A.R.K. agent lifecycle controls present"
+else
+  fail "A.R.K. agent lifecycle controls incomplete"
+fi
+if grep -q 'Name=A.R.K. Agent Console' "$AGENTAPP" \
+  && grep -q '/usr/lib/ark-desktop/ark-agentctl.py' "$AGENTAPP"; then
+  pass "A.R.K. agent console registered in launcher"
+else
+  fail "A.R.K. agent console launcher missing"
+fi
 
 if [[ "$FAIL" -ne 0 ]]; then
   echo "ARKlinux desktop static verification: FAIL" >&2
