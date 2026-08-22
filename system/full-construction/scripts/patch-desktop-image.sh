@@ -76,8 +76,15 @@ cp "$MNT/etc/pacman.conf" "$WORK/pacman-desktop.conf"
 sed -i 's|^Include = /etc/pacman.d/mirrorlist|Include = /etc/pacman.d/arklinux-desktop-mirrorlist|' "$WORK/pacman-desktop.conf"
 install -Dm0644 "$WORK/pacman-desktop.conf" "$MNT/etc/pacman.d/arklinux-desktop-pacman.conf"
 
-DESKTOP_PKGS=(gtk4 gtk4-layer-shell python-gobject thunar firefox)
+# Refresh the distribution trust material inside the image before installing
+# newly requested packages. The chroot has its own pacman keyring; the host's
+# keyring does not verify packages installed into this image.
 arch-chroot "$MNT" pacman -Syy --noconfirm --config /etc/pacman.d/arklinux-desktop-pacman.conf
+arch-chroot "$MNT" pacman -S --needed --noconfirm --config /etc/pacman.d/arklinux-desktop-pacman.conf \
+  archlinux-keyring ca-certificates
+arch-chroot "$MNT" pacman-key --populate archlinux
+
+DESKTOP_PKGS=(gtk4 gtk4-layer-shell python-gobject thunar firefox)
 arch-chroot "$MNT" pacman -S --needed --noconfirm --config /etc/pacman.d/arklinux-desktop-pacman.conf "${DESKTOP_PKGS[@]}"
 rm -f \
   "$MNT/etc/pacman.d/arklinux-desktop-pacman.conf" \
