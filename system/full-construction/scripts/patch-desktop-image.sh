@@ -9,6 +9,8 @@ REUSE="${ARKLINUX_DESKTOP_REUSE:-0}"
 WORK="$ROOT/.work/desktop-patch"
 MNT="$WORK/mnt"
 LOOP=""
+OUT_OWNER_UID="${SUDO_UID:-$(id -u)}"
+OUT_OWNER_GID="${SUDO_GID:-$(id -g)}"
 
 if [[ -z "$SOURCE_IMG" ]]; then
   echo "usage: $0 /path/to/proven/arklinux-x86_64.raw [destination.raw]" >&2
@@ -111,5 +113,13 @@ cleanup
 LOOP=""
 
 sha256sum "$DEST_IMG" > "$ROOT/out/arklinux-desktop-SHA256SUMS"
+
+# The patcher needs root for loop/mount/chroot work, but generated test artifacts
+# should remain usable by the invoking developer after sudo exits.
+chown "$OUT_OWNER_UID:$OUT_OWNER_GID" \
+  "$(dirname "$DEST_IMG")" \
+  "$DEST_IMG" \
+  "$ROOT/out/arklinux-desktop-SHA256SUMS"
+
 printf 'ARKlinux desktop test image patched: %s\n' "$DEST_IMG"
 printf 'Original proven image preserved: %s\n' "$SOURCE_IMG"
