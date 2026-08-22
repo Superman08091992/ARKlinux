@@ -1,1 +1,1 @@
-/usr/bin/python /usr/lib/ark-desktop/ark-shell.py &
+/usr/local/bin/ark-desktop-start &
