@@ -6,6 +6,7 @@ SOURCE_IMG="${1:-}"
 DEST_IMG="${2:-$ROOT/out/arklinux-x86_64.raw}"
 SNAP="${ARKLINUX_ARCH_SNAPSHOT:-2026/08/20}"
 REUSE="${ARKLINUX_DESKTOP_REUSE:-0}"
+FILES_ONLY="${ARKLINUX_DESKTOP_FILES_ONLY:-0}"
 WORK="$ROOT/.work/desktop-patch"
 MNT="$WORK/mnt"
 LOOP=""
@@ -69,28 +70,38 @@ grep -q '^ID=arklinux$' "$MNT/etc/os-release" || { echo "ERROR: destination is n
 [[ -f "$MNT/boot/arklinux-kernel" ]] || { echo "ERROR: ARKlinux kernel missing from copied image" >&2; exit 1; }
 [[ -d "$MNT/var/lib/pacman" ]] || { echo "ERROR: package database unavailable after topology mount" >&2; exit 1; }
 
-# Install only desktop dependencies against the same pinned userspace snapshot
-# used by the proven construction image. This avoids an unrelated rolling upgrade.
-cat > "$MNT/etc/pacman.d/arklinux-desktop-mirrorlist" <<EOF
+if [[ "$FILES_ONLY" != "1" ]]; then
+  # Install only desktop dependencies against the same pinned userspace snapshot
+  # used by the proven construction image. This avoids an unrelated rolling upgrade.
+  cat > "$MNT/etc/pacman.d/arklinux-desktop-mirrorlist" <<EOF
 Server = https://archive.archlinux.org/repos/${SNAP}/\$repo/os/\$arch
 EOF
-cp "$MNT/etc/pacman.conf" "$WORK/pacman-desktop.conf"
-sed -i 's|^Include = /etc/pacman.d/mirrorlist|Include = /etc/pacman.d/arklinux-desktop-mirrorlist|' "$WORK/pacman-desktop.conf"
-install -Dm0644 "$WORK/pacman-desktop.conf" "$MNT/etc/pacman.d/arklinux-desktop-pacman.conf"
+  cp "$MNT/etc/pacman.conf" "$WORK/pacman-desktop.conf"
+  sed -i 's|^Include = /etc/pacman.d/mirrorlist|Include = /etc/pacman.d/arklinux-desktop-mirrorlist|' "$WORK/pacman-desktop.conf"
+  install -Dm0644 "$WORK/pacman-desktop.conf" "$MNT/etc/pacman.d/arklinux-desktop-pacman.conf"
 
-# Refresh the distribution trust material inside the image before installing
-# newly requested packages. The chroot has its own pacman keyring; the host's
-# keyring does not verify packages installed into this image.
-arch-chroot "$MNT" pacman -Syy --noconfirm --config /etc/pacman.d/arklinux-desktop-pacman.conf
-arch-chroot "$MNT" pacman -S --needed --noconfirm --config /etc/pacman.d/arklinux-desktop-pacman.conf \
-  archlinux-keyring ca-certificates
-arch-chroot "$MNT" pacman-key --populate archlinux
+  # Refresh the distribution trust material inside the image before installing
+  # newly requested packages. The chroot has its own pacman keyring; the host's
+  # keyring does not verify packages installed into this image.
+  arch-chroot "$MNT" pacman -Syy --noconfirm --config /etc/pacman.d/arklinux-desktop-pacman.conf
+  arch-chroot "$MNT" pacman -S --needed --noconfirm --config /etc/pacman.d/arklinux-desktop-pacman.conf \
+    archlinux-keyring ca-certificates
+  arch-chroot "$MNT" pacman-key --populate archlinux
 
-DESKTOP_PKGS=(gtk4 gtk4-layer-shell python-gobject thunar firefox)
-arch-chroot "$MNT" pacman -S --needed --noconfirm --config /etc/pacman.d/arklinux-desktop-pacman.conf "${DESKTOP_PKGS[@]}"
-rm -f \
-  "$MNT/etc/pacman.d/arklinux-desktop-pacman.conf" \
-  "$MNT/etc/pacman.d/arklinux-desktop-mirrorlist"
+  DESKTOP_PKGS=(gtk4 gtk4-layer-shell python-gobject thunar firefox)
+  arch-chroot "$MNT" pacman -S --needed --noconfirm --config /etc/pacman.d/arklinux-desktop-pacman.conf "${DESKTOP_PKGS[@]}"
+  rm -f \
+    "$MNT/etc/pacman.d/arklinux-desktop-pacman.conf" \
+    "$MNT/etc/pacman.d/arklinux-desktop-mirrorlist"
+else
+  printf 'Files-only desktop patch: skipping package/keyring transaction.\n'
+  for pkg in gtk4 gtk4-layer-shell python-gobject thunar firefox; do
+    arch-chroot "$MNT" pacman -Q "$pkg" >/dev/null || {
+      echo "ERROR: files-only mode requested but package is missing: $pkg" >&2
+      exit 1
+    }
+  done
+fi
 
 # Overlay ARKlinux-owned desktop/session files. Persistent /ark state remains
 # on its mounted subvolumes and is not replaced by this rootfs overlay.
@@ -112,8 +123,8 @@ arch-chroot "$MNT" chown -R operator:operator /home/operator/.config
 # Ensure the installed operator can reach the local privileged broker.
 arch-chroot "$MNT" usermod -aG wheel operator
 
-# Verify service, Python syntax, and the installed operator session before
-# detaching the image.
+# Verify service, Python syntax, installed packages, and the operator session
+# before detaching the image.
 arch-chroot "$MNT" systemd-analyze verify \
   /etc/systemd/system/ark-desktop-rootd.service \
   /etc/systemd/system/greetd.service
