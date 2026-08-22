@@ -1,1 +1,1 @@
-/usr/local/bin/ark-desktop-start &
+/bin/bash /usr/local/bin/ark-desktop-start &
