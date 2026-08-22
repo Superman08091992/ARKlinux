@@ -11,6 +11,7 @@ required=(
   rootfs/usr/lib/ark-desktop/ark-desktop.py
   rootfs/usr/lib/ark-desktop/ark-rootd.py
   rootfs/usr/lib/ark-desktop/ark-shell.py
+  rootfs/usr/local/bin/ark-desktop-start
   rootfs/etc/systemd/system/ark-desktop-rootd.service
   rootfs/etc/systemd/system/greetd.service.d/ark-desktop.conf
   rootfs/usr/share/ark-desktop/icons/ark.svg
@@ -44,13 +45,25 @@ done
 [[ "$FAIL" -eq 0 ]] && pass "desktop package declarations"
 
 AUTO="$ROOT/rootfs/etc/skel/.config/labwc/autostart"
-grep -q '/usr/lib/ark-desktop/ark-shell.py' "$AUTO" \
-  && pass "Labwc starts ARK shell" || fail "Labwc does not start ARK shell"
+grep -q 'ark-desktop-start' "$AUTO" \
+  && pass "Labwc starts ARK desktop session" || fail "Labwc does not start ARK desktop session"
 if grep -Eq 'waybar|(^|[[:space:]])foot[[:space:]]*&' "$AUTO"; then
   fail "temporary Waybar/Foot scaffold still autostarts"
 else
   pass "temporary desktop scaffold removed"
 fi
+
+STARTER="$ROOT/rootfs/usr/local/bin/ark-desktop-start"
+grep -q 'ark-desktop/session.log' "$STARTER" \
+  && pass "desktop startup logging enabled" || fail "desktop startup logging missing"
+
+SHELL="$ROOT/rootfs/usr/lib/ark-desktop/ark-shell.py"
+grep -q 'CDLL("libgtk4-layer-shell.so")' "$SHELL" \
+  && pass "GTK4 Layer Shell preloaded" || fail "GTK4 Layer Shell preload missing"
+
+PATCHER="$ROOT/scripts/patch-desktop-image.sh"
+grep -q '/home/operator/.config/labwc/autostart' "$PATCHER" \
+  && pass "existing operator session is patched" || fail "operator Labwc session patch missing"
 
 ROOTD="$ROOT/rootfs/usr/lib/ark-desktop/ark-rootd.py"
 grep -q 'socket.AF_UNIX' "$ROOTD" || fail "root broker is not Unix-socket based"
