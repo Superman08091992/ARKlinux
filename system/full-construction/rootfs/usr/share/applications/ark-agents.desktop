@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=A.R.K. Agent Console
+Comment=Monitor and control the coordinated A.R.K. process set
+Exec=/usr/bin/foot -T "A.R.K. Agent Console" /usr/bin/python /usr/lib/ark-desktop/ark-agentctl.py
+Icon=/usr/share/ark-desktop/icons/agents.svg
+Terminal=false
+Categories=System;Monitor;
+Keywords=ARK;agents;Kyle;Joey;HRM;Kenny;services;control;
+StartupNotify=true
