@@ -1,4 +1,0 @@
-[Unit]
-Description=A.R.K. Effect Process Group
-Requires=ark-kenny.service
-After=local-fs.target
