@@ -8,46 +8,22 @@
 @swap	/swap	noatime	root	root	0700	os
 @snapshots	/.snapshots	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0700	os
 
-@ark-runtime	/ark/runtime	noatime,compress=zstd:3,nodev,nosuid	root	ark-core	0750	ark
-@ark-systems	/ark/systems	noatime,compress=zstd:3,nodev,nosuid	root	ark-core	0750	ark
-@ark-bus	/ark/bus	noatime,compress=zstd:1,nodev,nosuid,noexec	ark-bus	ark-ipc	0750	ark
-@ark-ingestion	/ark/intake/ingestion	noatime,compress=zstd:3,nodev,nosuid,noexec	ark-ingest	ark-ingest	0750	ark
-@ark-quarantine	/ark/intake/quarantine	noatime,compress=zstd:3,nodev,nosuid,noexec	ark-ingest	ark-quarantine	0700	ark
-@ark-kyle	/ark/processes/lifecycle/kyle	noatime,compress=zstd:3,nodev,nosuid,noexec	ark-kyle	ark-lifecycle	0750	ark
-@ark-joey	/ark/processes/cognition/joey	noatime,compress=zstd:3,nodev,nosuid,noexec	ark-joey	ark-cognition	0750	ark
-@ark-hrm	/ark/processes/correspondence/hrm	noatime,compress=zstd:3,nodev,nosuid,noexec	ark-hrm	ark-correspondence	0750	ark
-@ark-kenny	/ark/processes/effect/kenny	noatime,compress=zstd:3,nodev,nosuid,noexec	ark-kenny	ark-effect	0750	ark
-@ark-watchdog	/ark/processes/watchdog	noatime,compress=zstd:1,nodev,nosuid,noexec	ark-watchdog	ark-watchdog	0750	ark
-@ark-models	/ark/models	noatime,compress=zstd:3,nodev,nosuid,noexec	ark-model-router	ark-model	0750	ark
-@ark-vault	/ark/vault	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-vault	0700	ark
-@ark-apps	/ark/apps	noatime,compress=zstd:3,nodev,nosuid	root	ark-app	0750	ark
-@ark-storage	/ark/storage	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-storage	0750	ark
-@ark-backups	/ark/backups	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-backup	0700	ark
-@ark-artifacts	/ark/artifacts	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-artifact	0750	ark
-@ark-checkpoints	/ark/checkpoints	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-storage	0750	ark
-@ark-archives	/ark/archives	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-storage	0750	ark
-@ark-scratch	/ark/scratch	noatime,compress=zstd:1,nodev,nosuid	root	ark-core	0770	ark
-@ark-datasets	/ark/datasets	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-storage	0750	ark
+# A.R.K. package-owned code stays on the root filesystem under /opt/ark.
+# Only mutable state is split into dedicated Btrfs subvolumes, so package
+# installation can never be hidden by a mount at /opt/ark/runtime or /opt/ark/graveyard.
+@ark-bus	/opt/ark/bus	noatime,compress=zstd:1,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-evidence	/opt/ark/evidence	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-memory	/opt/ark/memory	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-state	/opt/ark/state	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-checkpoints	/opt/ark/checkpoints	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-quarantine	/opt/ark/quarantine	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-models	/opt/ark/models	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-storage	/opt/ark/storage	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-artifacts	/opt/ark/artifacts	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-datasets	/opt/ark/datasets	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-varlib	/var/lib/ark	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-backups	/var/lib/ark/backups	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0700	ark-state
 
-# Reserved now because the later Aletheia layer owns persistent memory/evidence/Graveyard.
-# The mounts exist in the initial ARKlinux filesystem so adding Aletheia does not require repartitioning.
-@aletheia-objects	/ark/aletheia/objects	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0750	aletheia-reserved
-@aletheia-sources	/ark/aletheia/sources	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0750	aletheia-reserved
-@aletheia-provenance	/ark/aletheia/provenance	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-evidence	0750	aletheia-reserved
-@aletheia-relationships	/ark/aletheia/relationships	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0750	aletheia-reserved
-@aletheia-authority	/ark/aletheia/authority	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0700	aletheia-reserved
-@aletheia-quarantine	/ark/aletheia/intake/quarantine	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0700	aletheia-reserved
-@aletheia-trusted	/ark/aletheia/trusted	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0750	aletheia-reserved
-@aletheia-live-memory	/ark/aletheia/memory/live	noatime,compress=zstd:1,nodev,nosuid,noexec	root	ark-memory	0750	aletheia-reserved
-@aletheia-identity	/ark/aletheia/memory/identity	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0700	aletheia-reserved
-@aletheia-knowledge	/ark/aletheia/memory/knowledge	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0750	aletheia-reserved
-@aletheia-episodic	/ark/aletheia/memory/episodic	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0700	aletheia-reserved
-@aletheia-reflective	/ark/aletheia/memory/reflective	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0700	aletheia-reserved
-@aletheia-procedural	/ark/aletheia/memory/procedural	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0750	aletheia-reserved
-@aletheia-graveyard	/ark/aletheia/graveyard	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-graveyard	0700	aletheia-reserved
-@aletheia-evidence	/ark/aletheia/evidence	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-evidence	0700	aletheia-reserved
-@aletheia-indexes	/ark/aletheia/indexes	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0750	aletheia-reserved
-@aletheia-environment-bases	/ark/aletheia/environments/bases	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0750	aletheia-reserved
-@aletheia-environment-state	/ark/aletheia/environments/state	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0750	aletheia-reserved
-@aletheia-package-store	/ark/aletheia/package-store	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0750	aletheia-reserved
-@aletheia-snapshots	/ark/aletheia/snapshots	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-memory	0700	aletheia-reserved
+# /run/ark is volatile and is created by systemd tmpfiles at boot.
+# /etc/ark is configuration and stays on the root filesystem.
+# /ark and /opt/ARK are legacy migration inputs only and are intentionally not mounted.
