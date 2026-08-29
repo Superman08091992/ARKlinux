@@ -1,7 +1,11 @@
 [Unit]
-Description=A.R.K. coordinated process architecture
-Requires=ark-core.target
-Wants=ark-lifecycle.target ark-cognition.target ark-correspondence.target ark-effect.target ark-intake.target ark-model.target ark-io.target
+Description=ARKlinux A.R.K. Integration Target
+Wants=ark-hardwared.service
 After=local-fs.target systemd-tmpfiles-setup.service
+
+# The private ark-services package is attached to this target by the image
+# integration step only after package provenance has been verified. ARKlinux
+# itself remains functional when no A.R.K. runtime package is installed.
+
 [Install]
 WantedBy=multi-user.target
