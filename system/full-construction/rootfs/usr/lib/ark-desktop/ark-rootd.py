@@ -36,9 +36,8 @@ SYSTEM_UNITS = {"NetworkManager.service", "nftables.service", "sshd.service"}
 ALLOWED_UNITS = ARK_UNITS | SYSTEM_UNITS
 SERVICE_ACTIONS = {"start", "stop", "restart"}
 STATIC_RUNTIME_FILES = {
-    "/run/ark/hardware.json",
+    "/run/arklinux/hardware.json",
 }
-PROCESS_FILE_RE = re.compile(r"^/run/ark/processes/[a-z0-9][a-z0-9-]{0,63}\.json$")
 HOSTNAME_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,61}[A-Za-z0-9])?$")
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -88,7 +87,7 @@ def validate_hostname(value: Any) -> str:
 
 def runtime_read(path_text: str) -> dict[str, str]:
     path = str(path_text or "")
-    if path not in STATIC_RUNTIME_FILES and not PROCESS_FILE_RE.fullmatch(path):
+    if path not in STATIC_RUNTIME_FILES:
         raise ValueError("runtime path is not exposed by the desktop broker")
     target = Path(path)
     if target.is_symlink():
