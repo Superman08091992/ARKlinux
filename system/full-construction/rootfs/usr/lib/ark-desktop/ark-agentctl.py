@@ -4,7 +4,6 @@ import shlex
 import socket
 import sys
 import time
-from pathlib import Path
 
 SOCKET_PATH = "/run/ark-desktop/root.sock"
 
@@ -44,12 +43,8 @@ def root_call(payload, timeout=30):
     return reply.get("result")
 
 
-def root_exec(argv, timeout=30):
-    return root_call({"op": "exec", "argv": argv, "timeout": timeout}, timeout + 5)
-
-
 def root_read(path):
-    return root_call({"op": "read_file", "path": path}, 5)["content"]
+    return root_call({"op": "runtime_read", "path": path}, 5)["content"]
 
 
 def read_json(path):
@@ -60,12 +55,7 @@ def read_json(path):
 
 
 def unit_state(name):
-    unit = UNITS[name]
-    result = root_exec([
-        "systemctl", "show", unit,
-        "--property=ActiveState", "--property=SubState", "--property=MainPID",
-        "--no-pager",
-    ], 5)
+    result = root_call({"op": "unit_state", "unit": UNITS[name]}, 10)
     values = {"ActiveState": "unknown", "SubState": "unknown", "MainPID": "0"}
     for line in result.get("stdout", "").splitlines():
         if "=" in line:
@@ -103,7 +93,7 @@ def clear():
 
 def banner():
     print("A.R.K. OPERATOR CONSOLE")
-    print("coordinated process controls • local root broker")
+    print("coordinated process controls • constrained local broker")
     print("=" * 72)
 
 
@@ -119,14 +109,11 @@ def dashboard():
     for name in UNITS:
         try:
             st, hb_state, age = short_state(name)
-            print(
-                f"{name:<14} {st['ActiveState']:<10} {hb_state:<12} {age:>10} {st['MainPID']:>8}"
-            )
+            print(f"{name:<14} {st['ActiveState']:<10} {hb_state:<12} {age:>10} {st['MainPID']:>8}")
         except Exception as exc:
             print(f"{name:<14} ERROR      {str(exc)[:46]}")
     print()
     print("Named agents: Kyle • Joey • HRM • Kenny")
-    print("Current agent bodies are native heartbeat scaffolds; model dialogue is not wired yet.")
     print()
     print("Commands: status | state | start NAME | stop NAME | restart NAME | logs NAME [N]")
     print("          hardware | bus | agents | infra | watch | help | exit")
@@ -154,13 +141,9 @@ def service_action(action, token):
 
 
 def show_logs(name, count=30):
-    names = names_for(name)
-    for role in names:
+    for role in names_for(name):
         print(f"\n--- {role} / {UNITS[role]} ---")
-        result = root_exec([
-            "journalctl", "-u", UNITS[role], "-n", str(max(1, min(count, 500))),
-            "--no-pager", "--output=short-iso",
-        ], 15)
+        result = root_call({"op": "journal", "unit": UNITS[role], "count": max(1, min(count, 500))}, 25)
         print(result.get("stdout", "") or result.get("stderr", "") or "(no log entries)")
 
 
