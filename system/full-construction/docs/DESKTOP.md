@@ -13,16 +13,18 @@ The interaction model is lightweight and modular like XFCE with Windows 7-style 
 - program/settings search field
 - popup launcher window
 - Files, Browser, Terminal and Settings launchers
-- ARK service state and clock
+- A.R.K. service state and clock
 - Settings window with System, Hardware, Network, Audio and Appearance sections
 
 ## Operating-system authority
 
 The visible desktop runs in the logged-in graphical session. Privileged actions are delegated to `ark-desktop-rootd.service` over `/run/ark-desktop/root.sock`.
 
-The broker runs as UID 0 and accepts requests only from local processes with wheel-group membership. It supports an unrestricted argv execution operation as the backend override mechanism, plus explicit service, power, file-read and file-write operations. Requests are written to `/var/log/ark-desktop-rootd.log`.
+The broker runs as UID 0 and accepts requests only from local processes with wheel-group membership. It is deliberately not a root shell. The protocol exposes only named, validated capabilities: approved service start/stop/restart, bounded service state and journal reads, specific `/run/ark` state files, hostname changes, Wi-Fi radio control, udev rescan, reboot, and poweroff. Arbitrary command execution, arbitrary root file reads, and arbitrary root file writes are rejected. Requests are recorded in `/var/log/ark-desktop/rootd.log`.
 
-There is intentionally no general command-entry terminal embedded in the desktop UI. The graphical settings and control surfaces invoke the privileged backend directly.
+The initial GTK desktop still emits three legacy `exec`-shaped requests for hostname, Wi-Fi, and udev rescan. Protocol v2 treats those only as a compatibility encoding: `ark-rootd` exact-matches them to the corresponding named capability and rejects every other argv. New code must use named operations directly.
+
+This boundary follows the ARKlinux rule that operator authority is explicit but privileged execution remains attributable and structurally bounded. Adding a new graphical privilege requires adding and validating a new protocol operation; it does not expand a generic shell escape hatch.
 
 ## Current graphical controls
 
@@ -41,11 +43,9 @@ The first implementation exposes:
 - network-device state
 - PipeWire output volume
 
-The backend can perform additional root operations as later settings panels are added.
-
 ## Browser boundary
 
-Firefox is included as the initial conventional browser. It is not the future ARK Browser. Before browser content receives deep A.R.K. integration, browser processes should be isolated from the desktop root-control channel in a separate sandbox/security domain. Remote web content must never be treated as a trusted desktop-control request.
+Firefox is included as the initial conventional browser. It is not the future ARK Browser. Browser processes are untrusted relative to the privileged desktop broker. Remote web content must never be converted directly into a root-broker request, and future browser/A.R.K. integration must pass through the normal A.R.K. authority, evidence, policy, and execution path.
 
 ## Next increments
 
@@ -60,4 +60,5 @@ Firefox is included as the initial conventional browser. It is not the future AR
 - richer file search
 - recovery and snapshot UI
 - ARK Browser with Kyle navigation and Joey analysis
+- remove the three protocol-v1 compatibility request shapes after the GTK callers are migrated
 - later 3D avatars/world surfaces
