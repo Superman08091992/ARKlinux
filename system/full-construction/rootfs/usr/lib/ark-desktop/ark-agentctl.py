@@ -1,33 +1,37 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import json
 import shlex
 import socket
 import sys
 import time
+import urllib.error
+import urllib.request
 
-SOCKET_PATH = "/run/ark-desktop/root.sock"
+ROOT_SOCKET = "/run/ark-desktop/root.sock"
+RUNTIME_URL = "http://127.0.0.1:18080"
 
 UNITS = {
-    "kyle": "ark-kyle.service",
-    "joey": "ark-joey.service",
-    "hrm": "ark-hrm.service",
-    "kenny": "ark-kenny.service",
-    "watchdog": "ark-watchdog.service",
-    "model-router": "ark-model-router.service",
-    "ingest": "ark-ingest.service",
+    "runtime": "ark-runtime-api.service",
+    "status-api": "ark-local-api.service",
+    "trading": "ark-trading.service",
     "hardwared": "ark-hardwared.service",
-    "bus": "ark-bus.service",
-    "arkd": "arkd.service",
 }
-AGENTS = ("kyle", "joey", "hrm", "kenny")
-INFRA = tuple(name for name in UNITS if name not in AGENTS)
+RUNTIME_ROLES = (
+    ("Kyle", "acquisition / interface / quarantine"),
+    ("Aletheia", "verification / evidence adjudication"),
+    ("Joey", "analysis / planning / comparison"),
+    ("HRM", "authority / execution-readiness validation"),
+    ("Kenny", "approved execution submission"),
+)
 
 
 def root_call(payload, timeout=30):
     data = (json.dumps(payload) + "\n").encode()
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(timeout)
-        sock.connect(SOCKET_PATH)
+        sock.connect(ROOT_SOCKET)
         sock.sendall(data)
         buf = b""
         while b"\n" not in buf:
@@ -36,26 +40,25 @@ def root_call(payload, timeout=30):
                 break
             buf += chunk
     if not buf:
-        raise RuntimeError("root broker returned no data")
+        raise RuntimeError("desktop broker returned no data")
     reply = json.loads(buf.split(b"\n", 1)[0].decode())
     if not reply.get("ok"):
-        raise RuntimeError(reply.get("error", "root broker request failed"))
+        raise RuntimeError(reply.get("error", "desktop broker request failed"))
     return reply.get("result")
 
 
-def root_read(path):
-    return root_call({"op": "runtime_read", "path": path}, 5)["content"]
-
-
-def read_json(path):
+def runtime_get(path, timeout=3):
+    request = urllib.request.Request(RUNTIME_URL + path, headers={"Accept": "application/json"})
     try:
-        return json.loads(root_read(path))
-    except Exception:
-        return None
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"canonical runtime unavailable: {exc}") from exc
 
 
 def unit_state(name):
-    result = root_call({"op": "unit_state", "unit": UNITS[name]}, 10)
+    unit = UNITS[name]
+    result = root_call({"op": "unit_state", "unit": unit}, 10)
     values = {"ActiveState": "unknown", "SubState": "unknown", "MainPID": "0"}
     for line in result.get("stdout", "").splitlines():
         if "=" in line:
@@ -64,124 +67,118 @@ def unit_state(name):
     return values
 
 
-def heartbeat(name):
-    return read_json(f"/run/ark/processes/{name}.json")
+def service_action(action, name):
+    if name not in UNITS:
+        raise ValueError(f"unknown service: {name}")
+    result = root_call({"op": "service", "action": action, "unit": UNITS[name]}, 125)
+    detail = result.get("stderr", "").strip() or result.get("stdout", "").strip()
+    print(f"{action:<7} {name:<12} {'OK' if result.get('returncode') == 0 else 'FAIL'} {detail}")
 
 
-def age_seconds(hb):
-    if not hb:
-        return None
+def show_logs(name, count=30):
+    if name not in UNITS:
+        raise ValueError(f"unknown service: {name}")
+    result = root_call({"op": "journal", "unit": UNITS[name], "count": count}, 25)
+    print(result.get("stdout", "") or result.get("stderr", "") or "(no log entries)")
+
+
+def hardware():
     try:
-        now = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
-        return max(0.0, (now - int(hb["monotonic_ns"])) / 1_000_000_000)
-    except Exception:
-        return None
-
-
-def short_state(name):
-    st = unit_state(name)
-    hb = heartbeat(name)
-    age = age_seconds(hb)
-    heartbeat_state = hb.get("state", "-") if hb else "missing"
-    age_text = "-" if age is None else f"{age:5.1f}s"
-    return st, heartbeat_state, age_text
+        raw = root_call({"op": "runtime_read", "path": "/run/ark/hardware.json"}, 5)["content"]
+        print(json.dumps(json.loads(raw), indent=2, sort_keys=True))
+    except Exception as exc:
+        print(f"hardware inventory unavailable: {exc}")
 
 
 def clear():
     print("\033[2J\033[H", end="")
 
 
-def banner():
-    print("A.R.K. OPERATOR CONSOLE")
-    print("coordinated process controls • constrained local broker")
-    print("=" * 72)
-
-
 def dashboard():
-    banner()
-    state = read_json("/run/ark/state.json") or {}
-    overall = str(state.get("state", "unknown")).upper()
-    missing = state.get("missing_or_stale", [])
-    print(f"A.R.K. state: {overall:<10}  missing/stale: {', '.join(missing) if missing else 'none'}")
-    print()
-    print(f"{'ROLE':<14} {'SERVICE':<10} {'PROCESS':<12} {'HEARTBEAT':>10} {'PID':>8}")
-    print("-" * 72)
+    print("A.R.K. OPERATOR CONSOLE")
+    print("canonical runtime state • no heartbeat-agent simulation")
+    print("=" * 78)
+
+    try:
+        health = runtime_get("/health")
+        status = runtime_get("/status")
+        runtime_ok = bool(health.get("ok"))
+        authority = status.get("authority") or {}
+        runtime_root = status.get("runtime_root", "unknown")
+        print(f"Runtime: {'READY' if runtime_ok else 'DEGRADED'}  root={runtime_root}")
+        print(
+            "Authority: mode={}  real-tools={}  AEM={}".format(
+                authority.get("mode", "unknown"),
+                authority.get("broker_executes_real_tools", "unknown"),
+                authority.get("aem_role", "unknown"),
+            )
+        )
+        print(
+            "Evidence: {} records   Bus: {} events".format(
+                (status.get("evidence") or {}).get("record_count", "?"),
+                (status.get("bus") or {}).get("event_count", "?"),
+            )
+        )
+    except Exception as exc:
+        print(f"Runtime: UNAVAILABLE ({exc})")
+
+    print("\nRuntime roles (logical stages, not fake per-agent daemons):")
+    for name, role in RUNTIME_ROLES:
+        print(f"  {name:<10} {role}")
+
+    print("\nServices:")
     for name in UNITS:
         try:
-            st, hb_state, age = short_state(name)
-            print(f"{name:<14} {st['ActiveState']:<10} {hb_state:<12} {age:>10} {st['MainPID']:>8}")
+            state = unit_state(name)
+            print(f"  {name:<12} {state['ActiveState']:<10} {state['SubState']:<12} pid={state['MainPID']}")
         except Exception as exc:
-            print(f"{name:<14} ERROR      {str(exc)[:46]}")
-    print()
-    print("Named agents: Kyle • Joey • HRM • Kenny")
-    print()
-    print("Commands: status | state | start NAME | stop NAME | restart NAME | logs NAME [N]")
-    print("          hardware | bus | agents | infra | watch | help | exit")
+            print(f"  {name:<12} unavailable ({exc})")
+
+    print("\nCommands: status | contract | events [N] | services | start NAME | stop NAME")
+    print("          restart NAME | logs NAME [N] | hardware | watch | help | exit")
 
 
-def names_for(token):
-    token = token.lower()
-    if token == "all":
-        return list(UNITS)
-    if token == "agents":
-        return list(AGENTS)
-    if token == "infra":
-        return list(INFRA)
-    if token not in UNITS:
-        raise ValueError(f"unknown role: {token}")
-    return [token]
+def show_contract():
+    print(json.dumps(runtime_get("/contract"), indent=2, sort_keys=True))
 
 
-def service_action(action, token):
-    for name in names_for(token):
-        result = root_call({"op": "service", "action": action, "unit": UNITS[name]}, 125)
-        rc = result.get("returncode", 1)
-        detail = result.get("stderr", "").strip() or result.get("stdout", "").strip()
-        print(f"{action:<7} {name:<14} {'OK' if rc == 0 else 'FAIL'} {detail}")
+def show_events(count=20):
+    payload = runtime_get("/bus/events", timeout=5)
+    events = list(payload.get("events") or [])[-max(1, min(int(count), 200)):]
+    print(json.dumps(events, indent=2, sort_keys=True))
 
 
-def show_logs(name, count=30):
-    for role in names_for(name):
-        print(f"\n--- {role} / {UNITS[role]} ---")
-        result = root_call({"op": "journal", "unit": UNITS[role], "count": max(1, min(count, 500))}, 25)
-        print(result.get("stdout", "") or result.get("stderr", "") or "(no log entries)")
-
-
-def show_json_file(path, title):
-    print(title)
-    data = read_json(path)
-    if data is None:
-        print("unavailable")
-    else:
-        print(json.dumps(data, indent=2, sort_keys=True))
+def services():
+    for name in UNITS:
+        try:
+            state = unit_state(name)
+            print(f"{name:<12} {state['ActiveState']:<10} {state['SubState']:<12} pid={state['MainPID']}")
+        except Exception as exc:
+            print(f"{name:<12} ERROR {exc}")
 
 
 def help_text():
-    print("""A.R.K. terminal controls
+    print("""A.R.K. operator console
 
-status                  show coordinated dashboard
-state                   show raw /run/ark/state.json
-agents                  show Kyle/Joey/HRM/Kenny only
-infra                   show support processes only
-start NAME              start role; NAME may be all, agents, or infra
-stop NAME               stop role; NAME may be all, agents, or infra
-restart NAME            restart role; NAME may be all, agents, or infra
-logs NAME [N]           last N journal lines, default 30
-hardware                show hardwared inventory
-bus                     show last bus message
-watch                   refresh dashboard every 2 seconds (Ctrl-C to stop)
+status                  canonical runtime + service summary
+contract                show runtime API contract
+ events [N]             show last N append-only runtime bus events
+services                show systemd state for real runtime/substrate services
+start NAME              start a service
+stop NAME               stop a service
+restart NAME            restart a service
+logs NAME [N]           show service journal
+hardware                show ARKlinux hardware inventory
+watch                   refresh status every 2 seconds
 help                    show this help
 exit                    close console
 
-Roles: kyle joey hrm kenny watchdog model-router ingest hardwared bus arkd
+Service names: runtime, status-api, trading, hardwared
+
+Trading is intentionally not enabled by the image builder until a persisted
+mandate and brokerage credentials are installed. The console never reports a
+trade as executed unless the canonical runtime evidence says it occurred.
 """)
-
-
-def list_subset(names):
-    banner()
-    for name in names:
-        st, hb_state, age = short_state(name)
-        print(f"{name:<14} service={st['ActiveState']:<9} process={hb_state:<12} heartbeat={age:>8} pid={st['MainPID']}")
 
 
 def execute(line):
@@ -195,16 +192,12 @@ def execute(line):
         help_text()
     elif cmd == "status":
         dashboard()
-    elif cmd == "state":
-        show_json_file("/run/ark/state.json", "A.R.K. coordinated state")
-    elif cmd == "hardware":
-        show_json_file("/run/ark/hardware.json", "ARKlinux hardware inventory")
-    elif cmd == "bus":
-        show_json_file("/run/ark/bus.last.json", "A.R.K. last bus message")
-    elif cmd == "agents":
-        list_subset(AGENTS)
-    elif cmd == "infra":
-        list_subset(INFRA)
+    elif cmd == "contract":
+        show_contract()
+    elif cmd == "events":
+        show_events(int(parts[1]) if len(parts) > 1 else 20)
+    elif cmd == "services":
+        services()
     elif cmd in {"start", "stop", "restart"}:
         if len(parts) != 2:
             raise ValueError(f"usage: {cmd} NAME")
@@ -213,12 +206,14 @@ def execute(line):
         if len(parts) not in {2, 3}:
             raise ValueError("usage: logs NAME [N]")
         show_logs(parts[1], int(parts[2]) if len(parts) == 3 else 30)
+    elif cmd == "hardware":
+        hardware()
     elif cmd == "watch":
         try:
             while True:
                 clear()
                 dashboard()
-                print("Refreshing every 2s. Ctrl-C returns to console.")
+                print("\nRefreshing every 2s. Ctrl-C returns to console.")
                 time.sleep(2)
         except KeyboardInterrupt:
             print()
@@ -232,8 +227,7 @@ def repl():
     dashboard()
     while True:
         try:
-            line = input("ark> ")
-            if not execute(line):
+            if not execute(input("ark> ")):
                 return
         except (EOFError, KeyboardInterrupt):
             print()
@@ -246,14 +240,13 @@ def main():
     try:
         root_call({"op": "ping"}, 3)
     except Exception as exc:
-        print(f"ARK desktop root broker unavailable: {exc}", file=sys.stderr)
+        print(f"ARKlinux desktop broker unavailable: {exc}", file=sys.stderr)
         return 1
     if len(sys.argv) == 1:
         repl()
         return 0
-    command = " ".join(shlex.quote(x) for x in sys.argv[1:])
     try:
-        execute(command)
+        execute(" ".join(shlex.quote(x) for x in sys.argv[1:]))
         return 0
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
