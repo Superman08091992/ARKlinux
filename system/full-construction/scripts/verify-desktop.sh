@@ -83,6 +83,12 @@ grep -q 'arbitrary argv execution is not exposed' "$ROOTD" || fail "root broker 
 for op in runtime_read unit_state journal service set_hostname wifi_radio hardware_rescan power; do
   grep -q "op == \"$op\"" "$ROOTD" || fail "named root operation missing: $op"
 done
+for unit in ark-runtime-api.service ark-local-api.service ark-trading.service ark-hardwared.service; do
+  grep -q "\"$unit\"" "$ROOTD" || fail "canonical unit not broker-allowlisted: $unit"
+done
+for fake in ark-kyle.service ark-joey.service ark-hrm.service ark-kenny.service; do
+  grep -q "\"$fake\"" "$ROOTD" && fail "heartbeat agent still exposed by broker: $fake"
+done
 [[ "$FAIL" -eq 0 ]] && pass "local constrained privilege broker structure"
 
 SERVICE="$ROOT/rootfs/etc/systemd/system/ark-desktop-rootd.service"
@@ -97,24 +103,27 @@ grep -q 'ark-desktop-rootd.service' "$DROPIN" && pass "graphical login requires 
 
 AGENTCTL="$ROOT/rootfs/usr/lib/ark-desktop/ark-agentctl.py"
 AGENTAPP="$ROOT/rootfs/usr/share/applications/ark-agents.desktop"
-if grep -q 'ark-kyle.service' "$AGENTCTL" \
-  && grep -q 'ark-joey.service' "$AGENTCTL" \
-  && grep -q 'ark-hrm.service' "$AGENTCTL" \
-  && grep -q 'ark-kenny.service' "$AGENTCTL" \
-  && grep -q '"op": "service"' "$AGENTCTL" \
-  && grep -q '"op": "unit_state"' "$AGENTCTL" \
-  && grep -q '"op": "journal"' "$AGENTCTL"; then
-  pass "A.R.K. agent lifecycle controls use named broker operations"
-else
-  fail "A.R.K. agent lifecycle controls incomplete"
-fi
+for required_text in \
+  'http://127.0.0.1:18080' \
+  '"/health"' \
+  '"/status"' \
+  '"/contract"' \
+  '"/bus/events"' \
+  'ark-runtime-api.service' \
+  'ark-trading.service' \
+  'logical stages, not fake per-agent daemons'; do
+  grep -qF "$required_text" "$AGENTCTL" || fail "canonical runtime console missing: $required_text"
+done
+for fake in ark-kyle.service ark-joey.service ark-hrm.service ark-kenny.service; do
+  grep -q "$fake" "$AGENTCTL" && fail "agent console still models heartbeat daemon: $fake"
+done
 if grep -q '"op": "exec"' "$AGENTCTL" || grep -q '"op": "read_file"' "$AGENTCTL"; then
-  fail "agent console still depends on generic privileged operations"
+  fail "runtime console still depends on generic privileged operations"
 fi
 if grep -q 'Name=A.R.K. Agent Console' "$AGENTAPP" && grep -q '/usr/lib/ark-desktop/ark-agentctl.py' "$AGENTAPP"; then
-  pass "A.R.K. agent console registered in launcher"
+  pass "A.R.K. runtime console registered in launcher"
 else
-  fail "A.R.K. agent console launcher missing"
+  fail "A.R.K. runtime console launcher missing"
 fi
 
 if [[ "$FAIL" -ne 0 ]]; then
