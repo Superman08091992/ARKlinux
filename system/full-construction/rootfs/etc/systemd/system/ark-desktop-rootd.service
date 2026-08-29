@@ -1,5 +1,5 @@
 [Unit]
-Description=ARKlinux Desktop Root Broker
+Description=ARKlinux Constrained Desktop Privilege Broker
 After=local-fs.target
 Before=greetd.service
 
@@ -10,9 +10,19 @@ Group=wheel
 UMask=0007
 RuntimeDirectory=ark-desktop
 RuntimeDirectoryMode=0770
+LogsDirectory=ark-desktop
+LogsDirectoryMode=0750
 ExecStart=/usr/bin/python /usr/lib/ark-desktop/ark-rootd.py
 Restart=on-failure
 RestartSec=1
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/run/ark-desktop /var/log/ark-desktop
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictSUIDSGID=yes
+LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target
