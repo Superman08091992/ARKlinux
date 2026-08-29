@@ -42,15 +42,12 @@ for pkg in gtk4 gtk4-layer-shell python-gobject thunar firefox; do
   grep -qxF "$pkg" "$PKGS" || fail "package missing: $pkg"
 done
 for pkg in waybar wofi; do
-  if grep -qxF "$pkg" "$PKGS"; then
-    fail "obsolete scaffold package still declared: $pkg"
-  fi
+  grep -qxF "$pkg" "$PKGS" && fail "obsolete scaffold package still declared: $pkg"
 done
 [[ "$FAIL" -eq 0 ]] && pass "desktop package declarations"
 
 AUTO="$ROOT/rootfs/etc/skel/.config/labwc/autostart"
-grep -q 'ark-desktop-start' "$AUTO" \
-  && pass "Labwc starts ARK desktop session" || fail "Labwc does not start ARK desktop session"
+grep -q 'ark-desktop-start' "$AUTO" && pass "Labwc starts ARK desktop session" || fail "Labwc does not start ARK desktop session"
 if grep -Eq 'waybar|(^|[[:space:]])foot[[:space:]]*&' "$AUTO"; then
   fail "temporary Waybar/Foot scaffold still autostarts"
 else
@@ -65,27 +62,38 @@ else
 fi
 
 SHELL="$ROOT/rootfs/usr/lib/ark-desktop/ark-shell.py"
-grep -q 'CDLL("libgtk4-layer-shell.so")' "$SHELL" \
-  && pass "GTK4 Layer Shell preloaded" || fail "GTK4 Layer Shell preload missing"
+grep -q 'CDLL("libgtk4-layer-shell.so")' "$SHELL" && pass "GTK4 Layer Shell preloaded" || fail "GTK4 Layer Shell preload missing"
 
 PATCHER="$ROOT/scripts/patch-desktop-image.sh"
-grep -q '/home/operator/.config/labwc/autostart' "$PATCHER" \
-  && pass "existing operator session is patched" || fail "operator Labwc session patch missing"
+grep -q '/home/operator/.config/labwc/autostart' "$PATCHER" && pass "existing operator session is patched" || fail "operator Labwc session patch missing"
 
 ROOTD="$ROOT/rootfs/usr/lib/ark-desktop/ark-rootd.py"
 grep -q 'socket.AF_UNIX' "$ROOTD" || fail "root broker is not Unix-socket based"
 grep -q '/run/ark-desktop/root.sock' "$ROOTD" || fail "root broker socket path missing"
 grep -q 'SO_PEERCRED' "$ROOTD" || fail "root broker peer credential check missing"
 grep -q 'WHEEL_GID' "$ROOTD" || fail "root broker wheel authorization missing"
-[[ "$FAIL" -eq 0 ]] && pass "local privileged broker structure"
+if grep -q 'return run(req.get("argv")' "$ROOTD"; then
+  fail "unrestricted argv execution returned to root broker"
+fi
+if grep -q 'if op == "read_file"' "$ROOTD" || grep -q 'if op == "write_file"' "$ROOTD"; then
+  fail "arbitrary privileged file API returned to root broker"
+fi
+grep -q 'named_exec_compat' "$ROOTD" || fail "bounded legacy request mapper missing"
+grep -q 'arbitrary argv execution is not exposed' "$ROOTD" || fail "root broker does not explicitly reject arbitrary argv"
+for op in runtime_read unit_state journal service set_hostname wifi_radio hardware_rescan power; do
+  grep -q "op == \"$op\"" "$ROOTD" || fail "named root operation missing: $op"
+done
+[[ "$FAIL" -eq 0 ]] && pass "local constrained privilege broker structure"
 
 SERVICE="$ROOT/rootfs/etc/systemd/system/ark-desktop-rootd.service"
-grep -q '^User=root$' "$SERVICE" \
-  && pass "root broker runs as root" || fail "root broker service is not root"
+grep -q '^User=root$' "$SERVICE" || fail "root broker service is not root"
+for rule in 'NoNewPrivileges=yes' 'ProtectSystem=strict' 'ProtectHome=read-only' 'RestrictAddressFamilies=AF_UNIX AF_NETLINK'; do
+  grep -q "^${rule}$" "$SERVICE" || fail "root broker hardening missing: $rule"
+done
+[[ "$FAIL" -eq 0 ]] && pass "root broker systemd hardening"
 
 DROPIN="$ROOT/rootfs/etc/systemd/system/greetd.service.d/ark-desktop.conf"
-grep -q 'ark-desktop-rootd.service' "$DROPIN" \
-  && pass "graphical login requires root broker" || fail "greetd/root broker dependency missing"
+grep -q 'ark-desktop-rootd.service' "$DROPIN" && pass "graphical login requires root broker" || fail "greetd/root broker dependency missing"
 
 AGENTCTL="$ROOT/rootfs/usr/lib/ark-desktop/ark-agentctl.py"
 AGENTAPP="$ROOT/rootfs/usr/share/applications/ark-agents.desktop"
@@ -93,13 +101,17 @@ if grep -q 'ark-kyle.service' "$AGENTCTL" \
   && grep -q 'ark-joey.service' "$AGENTCTL" \
   && grep -q 'ark-hrm.service' "$AGENTCTL" \
   && grep -q 'ark-kenny.service' "$AGENTCTL" \
-  && grep -q '"op": "service"' "$AGENTCTL"; then
-  pass "A.R.K. agent lifecycle controls present"
+  && grep -q '"op": "service"' "$AGENTCTL" \
+  && grep -q '"op": "unit_state"' "$AGENTCTL" \
+  && grep -q '"op": "journal"' "$AGENTCTL"; then
+  pass "A.R.K. agent lifecycle controls use named broker operations"
 else
   fail "A.R.K. agent lifecycle controls incomplete"
 fi
-if grep -q 'Name=A.R.K. Agent Console' "$AGENTAPP" \
-  && grep -q '/usr/lib/ark-desktop/ark-agentctl.py' "$AGENTAPP"; then
+if grep -q '"op": "exec"' "$AGENTCTL" || grep -q '"op": "read_file"' "$AGENTCTL"; then
+  fail "agent console still depends on generic privileged operations"
+fi
+if grep -q 'Name=A.R.K. Agent Console' "$AGENTAPP" && grep -q '/usr/lib/ark-desktop/ark-agentctl.py' "$AGENTAPP"; then
   pass "A.R.K. agent console registered in launcher"
 else
   fail "A.R.K. agent console launcher missing"
