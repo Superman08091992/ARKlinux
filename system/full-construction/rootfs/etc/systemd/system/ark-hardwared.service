@@ -1,29 +1,29 @@
 [Unit]
-Description=A.R.K. native process: hardwared
-Requires=ark-bus.service
-After=local-fs.target ark-bus.service
-PartOf=ark-io.target
+Description=ARKlinux Hardware Inventory Observer
+After=local-fs.target systemd-tmpfiles-setup.service
+PartOf=ark.target
 
 [Service]
 Type=simple
 User=ark-hardwared
 Group=ark-io
-SupplementaryGroups=ark-ipc
 ExecStart=/usr/bin/python /usr/lib/ark/ark_native.py --role hardwared
 Restart=on-failure
-RestartSec=1
+RestartSec=2
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
+ProtectKernelLogs=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
 RestrictRealtime=yes
 SystemCallArchitectures=native
-ReadWritePaths=/run/ark /ark
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/run/ark
 
 [Install]
-WantedBy=ark-io.target
+WantedBy=ark.target
