@@ -3,7 +3,7 @@
 
 This service is intentionally *not* a root shell. The graphical session may
 request only explicit, validated operations. The temporary ``exec`` operation
-exists only as a compatibility shim for three already-shipped desktop calls and
+exists only as a compatibility shim for three existing GTK settings calls and
 maps them to the same named operations; arbitrary argv execution is rejected.
 """
 from __future__ import annotations
@@ -27,24 +27,16 @@ MAX_REQUEST = 64 * 1024
 
 ARK_UNITS = {
     "ark.target",
-    "ark-kyle.service",
-    "ark-joey.service",
-    "ark-hrm.service",
-    "ark-kenny.service",
-    "ark-watchdog.service",
-    "ark-model-router.service",
-    "ark-ingest.service",
+    "ark-runtime-api.service",
+    "ark-local-api.service",
+    "ark-trading.service",
     "ark-hardwared.service",
-    "ark-bus.service",
-    "arkd.service",
 }
 SYSTEM_UNITS = {"NetworkManager.service", "nftables.service", "sshd.service"}
 ALLOWED_UNITS = ARK_UNITS | SYSTEM_UNITS
 SERVICE_ACTIONS = {"start", "stop", "restart"}
 STATIC_RUNTIME_FILES = {
-    "/run/ark/state.json",
     "/run/ark/hardware.json",
-    "/run/ark/bus.last.json",
 }
 PROCESS_FILE_RE = re.compile(r"^/run/ark/processes/[a-z0-9][a-z0-9-]{0,63}\.json$")
 HOSTNAME_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,61}[A-Za-z0-9])?$")
@@ -105,7 +97,7 @@ def runtime_read(path_text: str) -> dict[str, str]:
 
 
 def named_exec_compat(argv: Any) -> dict[str, Any]:
-    """Compatibility for the pre-protocol-v2 GTK desktop; never a general exec."""
+    """Compatibility for pre-protocol-v2 GTK calls; never a general exec."""
     if not isinstance(argv, list) or not all(isinstance(x, str) for x in argv):
         raise ValueError("compat argv must be a string array")
     if argv == ["udevadm", "trigger", "--action=change"]:
