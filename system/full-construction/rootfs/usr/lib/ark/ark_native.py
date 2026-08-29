@@ -15,7 +15,7 @@ import signal
 import time
 from pathlib import Path
 
-RUN = Path("/run/ark")
+RUN = Path("/run/arklinux")
 PROCESSES = RUN / "processes"
 STOP = False
 
@@ -57,7 +57,7 @@ def hardwared() -> None:
                 "gid": os.getgid(),
                 "monotonic_ns": now,
                 "state": "ready",
-                "inventory": "/run/ark/hardware.json",
+                "inventory": "/run/arklinux/hardware.json",
             },
         )
         time.sleep(5)
