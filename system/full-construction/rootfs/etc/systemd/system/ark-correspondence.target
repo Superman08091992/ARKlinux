@@ -1,4 +1,0 @@
-[Unit]
-Description=A.R.K. Correspondence Process Group
-Requires=ark-hrm.service
-After=local-fs.target
