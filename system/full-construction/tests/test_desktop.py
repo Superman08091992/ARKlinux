@@ -64,8 +64,6 @@ def test_root_broker_is_local_and_peer_authenticated():
 
 def test_root_broker_has_no_general_root_shell_or_file_api():
     source = (ROOT / "rootfs/usr/lib/ark-desktop/ark-rootd.py").read_text()
-    # Compatibility op=exec is exact-matched to three legacy UI requests. These
-    # old general dispatch shapes must never return.
     assert 'return run(req.get("argv")' not in source
     assert 'if op == "read_file"' not in source
     assert 'if op == "write_file"' not in source
@@ -84,6 +82,13 @@ def test_root_broker_has_no_general_root_shell_or_file_api():
         assert operation in source
 
 
+def test_root_broker_separates_host_telemetry_from_ark_runtime_state():
+    source = (ROOT / "rootfs/usr/lib/ark-desktop/ark-rootd.py").read_text()
+    assert '"/run/arklinux/hardware.json"' in source
+    assert '"/run/ark/hardware.json"' not in source
+    assert "PROCESS_FILE_RE" not in source
+
+
 def test_root_broker_service_is_hardened():
     service = (ROOT / "rootfs/etc/systemd/system/ark-desktop-rootd.service").read_text()
     assert "User=root" in service
@@ -92,6 +97,22 @@ def test_root_broker_service_is_hardened():
     assert "ProtectHome=read-only" in service
     assert "RestrictAddressFamilies=AF_UNIX AF_NETLINK" in service
     assert "ReadWritePaths=/run/ark-desktop /var/log/ark-desktop" in service
+
+
+def test_operator_console_surfaces_terminal_outcome_provenance():
+    source = (ROOT / "rootfs/usr/lib/ark-desktop/ark-agentctl.py").read_text()
+    for term in (
+        "Last terminal outcome",
+        "blocker_demonstrated",
+        "evidence_level",
+        "premature_stop",
+        "unknown_internal",
+        "provider_reported",
+        "USER ACTION",
+    ):
+        assert term in source
+    assert "/run/arklinux/hardware.json" in source
+    assert "/run/ark/hardware.json" not in source
 
 
 def test_agent_console_uses_named_broker_operations():
