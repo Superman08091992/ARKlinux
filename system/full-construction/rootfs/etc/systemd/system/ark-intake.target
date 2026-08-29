@@ -1,4 +1,0 @@
-[Unit]
-Description=A.R.K. Intake Process Group
-Requires=ark-ingest.service
-After=local-fs.target
