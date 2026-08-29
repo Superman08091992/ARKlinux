@@ -1,4 +1,0 @@
-[Unit]
-Description=A.R.K. Model Process Group
-Requires=ark-model-router.service
-After=local-fs.target
