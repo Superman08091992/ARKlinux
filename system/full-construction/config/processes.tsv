@@ -1,11 +1,9 @@
 # service	role	user	group	target	state_path
-arkd.service	arkd	arkd	ark-core	ark-core.target	/ark/runtime
-ark-bus.service	bus	ark-bus	ark-ipc	ark-core.target	/ark/bus
-ark-watchdog.service	watchdog	ark-watchdog	ark-watchdog	ark-core.target	/ark/processes/watchdog
-ark-kyle.service	kyle	ark-kyle	ark-lifecycle	ark-lifecycle.target	/ark/processes/lifecycle/kyle
-ark-joey.service	joey	ark-joey	ark-cognition	ark-cognition.target	/ark/processes/cognition/joey
-ark-hrm.service	hrm	ark-hrm	ark-correspondence	ark-correspondence.target	/ark/processes/correspondence/hrm
-ark-kenny.service	kenny	ark-kenny	ark-effect	ark-effect.target	/ark/processes/effect/kenny
-ark-ingest.service	ingest	ark-ingest	ark-ingest	ark-intake.target	/ark/intake/ingestion
-ark-model-router.service	model-router	ark-model-router	ark-model	ark-model.target	/ark/models
-ark-hardwared.service	hardwared	ark-hardwared	ark-io	ark-io.target	/ark/systems
+ark-runtime-api.service	ark-runtime	ark	ark	ark.target	/opt/ark/state
+ark-local-api.service	status-api	ark	ark	manual	/opt/ark/state
+ark-trading.service	trading	ark	ark	manual	/opt/ark/evidence
+ark-hardwared.service	hardwared	ark-hardwared	ark-io	ark.target	/run/ark/hardware.json
+
+# Kyle, Aletheia, Joey, HRM, and Kenny are canonical A.R.K. runtime roles provided
+# by the private ark-runtime package. They are not represented as heartbeat-only
+# systemd processes in ARKlinux.
