@@ -1,4 +1,0 @@
-[Unit]
-Description=A.R.K. Lifecycle Process Group
-Requires=ark-kyle.service
-After=local-fs.target
