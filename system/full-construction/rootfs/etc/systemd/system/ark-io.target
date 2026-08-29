@@ -1,4 +1,0 @@
-[Unit]
-Description=A.R.K. Io Process Group
-Requires=ark-hardwared.service
-After=local-fs.target
