@@ -89,6 +89,10 @@ done
 for fake in ark-kyle.service ark-joey.service ark-hrm.service ark-kenny.service; do
   grep -q "\"$fake\"" "$ROOTD" && fail "heartbeat agent still exposed by broker: $fake"
 done
+grep -qF '"/run/arklinux/hardware.json"' "$ROOTD" || fail "ARKlinux hardware telemetry path missing"
+if grep -qF '"/run/ark/hardware.json"' "$ROOTD"; then
+  fail "ARKlinux hardware telemetry still collides with A.R.K. /run state"
+fi
 [[ "$FAIL" -eq 0 ]] && pass "local constrained privilege broker structure"
 
 SERVICE="$ROOT/rootfs/etc/systemd/system/ark-desktop-rootd.service"
@@ -111,7 +115,15 @@ for required_text in \
   '"/bus/events"' \
   'ark-runtime-api.service' \
   'ark-trading.service' \
-  'logical stages, not fake per-agent daemons'; do
+  'logical stages, not fake per-agent daemons' \
+  'Last terminal outcome' \
+  'blocker_demonstrated' \
+  'evidence_level' \
+  'premature_stop' \
+  'unknown_internal' \
+  'provider_reported' \
+  'USER ACTION' \
+  '/run/arklinux/hardware.json'; do
   grep -qF "$required_text" "$AGENTCTL" || fail "canonical runtime console missing: $required_text"
 done
 for fake in ark-kyle.service ark-joey.service ark-hrm.service ark-kenny.service; do
@@ -119,6 +131,9 @@ for fake in ark-kyle.service ark-joey.service ark-hrm.service ark-kenny.service;
 done
 if grep -q '"op": "exec"' "$AGENTCTL" || grep -q '"op": "read_file"' "$AGENTCTL"; then
   fail "runtime console still depends on generic privileged operations"
+fi
+if grep -qF '/run/ark/hardware.json' "$AGENTCTL"; then
+  fail "runtime console still reads ARKlinux host telemetry from A.R.K. runtime state"
 fi
 if grep -q 'Name=A.R.K. Agent Console' "$AGENTAPP" && grep -q '/usr/lib/ark-desktop/ark-agentctl.py' "$AGENTAPP"; then
   pass "A.R.K. runtime console registered in launcher"
