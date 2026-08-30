@@ -2,6 +2,8 @@
 import json
 import socket
 import subprocess
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -12,6 +14,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk, Gtk4LayerShell
 
 APP_ID = "world.1true.arklinux.Desktop"
 SOCKET_PATH = "/run/ark-desktop/root.sock"
+RUNTIME_URL = "http://127.0.0.1:18080"
 ASSET_DIR = Path("/usr/share/ark-desktop/icons")
 
 CSS = r"""
@@ -62,6 +65,12 @@ def spawn(argv):
         subprocess.Popen(argv, start_new_session=True)
     except Exception:
         pass
+
+
+def runtime_get(path, timeout=2):
+    request = urllib.request.Request(RUNTIME_URL + path, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
 def root_call(payload, timeout=65):
@@ -219,8 +228,8 @@ class ArkDesktop(Gtk.Application):
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
         bar.append(spacer)
-        status = Gtk.Label(label="ARK ●")
-        status.set_tooltip_text("A.R.K. service state")
+        status = Gtk.Label(label="ARK …")
+        status.set_tooltip_text("A.R.K. runtime state has not been read yet")
         bar.append(status)
         clock = Gtk.Label()
         clock.add_css_class("ark-clock")
@@ -228,8 +237,38 @@ class ArkDesktop(Gtk.Application):
 
         def update_clock():
             clock.set_text(datetime.now().strftime("%a %b %-d   %-I:%M %p"))
-            state = run(["systemctl", "is-active", "ark.target"], 2)
-            status.set_text("ARK ●" if state.returncode == 0 else "ARK ○")
+            try:
+                payload = runtime_get("/status", 2)
+                health = payload.get("health") or {}
+                outcomes = payload.get("outcomes") or {}
+                outcome = outcomes.get("last_outcome") or {}
+                classification = str(outcome.get("classification") or "none")
+                evidence = str(outcome.get("evidence_level") or "none")
+                blocker = bool(outcome.get("blocker_demonstrated"))
+                user_action = bool(outcome.get("user_action_required"))
+                ready = bool(health.get("ready", health.get("alive", False)))
+                if classification in {"premature_stop", "reasoning_failure", "unknown_internal", "dependency_failure"}:
+                    marker = "!"
+                elif classification in {"technical_limit", "tool_unavailable", "context_degraded", "product_limit", "policy_intervention", "authority_denied", "input_invalid"}:
+                    marker = "◐"
+                else:
+                    marker = "●" if ready else "○"
+                status.set_text(f"ARK {marker}")
+                summary = str(outcome.get("summary") or "No terminal outcome recorded yet.")
+                action_text = str(outcome.get("user_action") or "none") if user_action else "none"
+                status.set_tooltip_text(
+                    "A.R.K. runtime: {}\nLast outcome: {}\nEvidence: {}\nBlocker demonstrated: {}\nUser action: {}\n{}".format(
+                        "ready" if ready else "degraded",
+                        classification,
+                        evidence,
+                        "yes" if blocker else "no",
+                        action_text,
+                        summary,
+                    )
+                )
+            except Exception as exc:
+                status.set_text("ARK ?")
+                status.set_tooltip_text(f"A.R.K. status unavailable. Cause not inferred.\n{type(exc).__name__}: {exc}")
             return True
 
         update_clock()
@@ -377,7 +416,15 @@ class ArkDesktop(Gtk.Application):
         services_title.set_halign(Gtk.Align.START)
         services_title.add_css_class("section-title")
         box.append(services_title)
-        for unit in ("ark.target", "NetworkManager.service", "nftables.service", "sshd.service"):
+        for unit in (
+            "ark.target",
+            "ark-runtime-api.service",
+            "ark-trading.service",
+            "ark-hardwared.service",
+            "NetworkManager.service",
+            "nftables.service",
+            "sshd.service",
+        ):
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             label = Gtk.Label(label=unit)
             label.set_hexpand(True)
