@@ -60,6 +60,7 @@ apply_persistent_ark_layout(){
   arch-chroot "$MNT" install -d -m 0770 -o ark-trading -g ark-state /ark/trading
   arch-chroot "$MNT" install -d -m 0750 -o root -g ark-state /etc/ark /etc/ark/trading
   arch-chroot "$MNT" install -d -m 0770 -o arkd -g ark-state /var/lib/ark
+  arch-chroot "$MNT" install -d -m 0770 -o arkd -g ark-state /var/log/ark
 }
 
 [[ ${EUID:-$(id -u)} -eq 0 ]] || { echo "ERROR: build-image.sh must run as root" >&2; exit 1; }
@@ -152,6 +153,7 @@ arch-chroot "$MNT" systemctl set-default graphical.target
 
 stage "validate native A.R.K. contract"
 arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -L /opt/ark && test "$(readlink /opt/ark)" = /ark'
+arch-chroot "$MNT" /bin/bash -lc 'test -d /var/log/ark && test "$(stat -c "%U:%G:%a" /var/log/ark)" = arkd:ark-state:770'
 arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service'
 arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service'
 
