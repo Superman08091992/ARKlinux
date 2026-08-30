@@ -40,7 +40,10 @@ jobs:
         run: bash system/full-construction/scripts/verify-topology.sh
       - name: Verify private runtime lock shape
         run: |
-          test -s system/full-construction/config/ark-genesis.lock
-          grep -Eq '^commit=[0-9a-f]{40}$' system/full-construction/config/ark-genesis.lock
-          grep -q '^runtime_root=/opt/ark$' system/full-construction/config/ark-genesis.lock
+          LOCK=system/full-construction/config/ark-genesis.lock
+          test -s "$LOCK"
+          grep -Eq '^ARK_GENESIS_COMMIT=[0-9a-f]{40}$' "$LOCK"
+          grep -q '^ARK_RUNTIME_ROOT=/opt/ark$' "$LOCK"
+          grep -q '^ARK_GENESIS_REPOSITORY=Superman08091992/ARK_GENESIS$' "$LOCK"
+          grep -q '^ARK_GENESIS_PACKAGES="ark-runtime ark-services ark-ui"$' "$LOCK"
           ! grep -R --line-number --exclude-dir=.git --exclude='*.md' '/ark/processes\|/ark/runtime\|ark-kyle.service\|ark-joey.service\|ark-hrm.service\|ark-kenny.service' system/full-construction/config system/full-construction/rootfs/etc/systemd system/full-construction/rootfs/usr/lib/ark-desktop
