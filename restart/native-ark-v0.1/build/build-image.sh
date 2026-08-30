@@ -25,6 +25,27 @@ cleanup(){
 }
 trap cleanup EXIT
 
+clear_stale_build_state(){
+  local stale_loop
+  if findmnt -rn -M "$MNT" >/dev/null 2>&1; then
+    stage "remove stale build mounts"
+    if ! umount -R "$MNT"; then
+      echo "ERROR: stale build mount is busy: $MNT" >&2
+      findmnt -R -M "$MNT" >&2 || true
+      return 1
+    fi
+  fi
+  while IFS= read -r stale_loop; do
+    [[ -n "$stale_loop" ]] || continue
+    losetup -d "$stale_loop"
+  done < <(losetup -j "$IMG" --list --noheadings --output NAME 2>/dev/null || true)
+  if findmnt -rn -M "$MNT" >/dev/null 2>&1; then
+    echo "ERROR: stale build mount remains after cleanup: $MNT" >&2
+    findmnt -R -M "$MNT" >&2 || true
+    return 1
+  fi
+}
+
 resolve_partitions(){
   local base
   base="$(basename "$LOOP")"
@@ -66,6 +87,7 @@ apply_persistent_ark_layout(){
 [[ ${EUID:-$(id -u)} -eq 0 ]] || { echo "ERROR: build-image.sh must run as root" >&2; exit 1; }
 [[ -f "$OVERLAY" ]] || { echo "ERROR: private A.R.K. overlay missing: $OVERLAY" >&2; exit 1; }
 stage "prepare raw disk"
+clear_stale_build_state
 rm -rf "$WORK"; mkdir -p "$OUT" "$MNT"; rm -f "$IMG" "$COMPRESSED"
 truncate -s "${SIZE_GIB}G" "$IMG"
 sgdisk --zap-all "$IMG"
