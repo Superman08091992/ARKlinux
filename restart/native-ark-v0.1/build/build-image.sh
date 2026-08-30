@@ -88,11 +88,17 @@ stage "apply A.R.K. system users"
 # chroot state.
 arch-chroot "$MNT" systemd-sysusers /usr/lib/sysusers.d/ark-native.conf
 
-stage "apply A.R.K. runtime directories"
-# Likewise, create only the A.R.K. paths here. The full systemd-tmpfiles set is
-# applied normally at boot, where runtime-only paths and namespaces exist.
-arch-chroot "$MNT" systemd-tmpfiles --create /usr/lib/tmpfiles.d/ark-native.conf
+stage "apply persistent A.R.K. directories"
+# /run/ark is explicitly volatile. arch-chroot exposes a runtime /run mount, so
+# creating it during image assembly can target chroot runtime state instead of
+# persistent image state. Restrict this pass to persistent /ark and /etc/ark;
+# normal boot-time systemd-tmpfiles creates /run/ark from the same config.
+arch-chroot "$MNT" systemd-tmpfiles --create --prefix=/ark --prefix=/etc/ark /usr/lib/tmpfiles.d/ark-native.conf
 mkdir -p "$MNT/var/lib/ark"
+
+stage "validate compatibility namespace"
+[[ -L "$MNT/opt/ark" ]] || { echo "ERROR: /opt/ark compatibility symlink missing" >&2; exit 1; }
+[[ "$(readlink "$MNT/opt/ark")" == "/ark" ]] || { echo "ERROR: /opt/ark must resolve to /ark" >&2; exit 1; }
 
 stage "create operator account"
 arch-chroot "$MNT" useradd -m -G wheel,audio,video,input,storage -s /bin/bash operator || true
