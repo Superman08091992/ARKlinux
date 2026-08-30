@@ -1,0 +1,19 @@
+[Unit]
+Description=ARKlinux first-boot operator setup
+Before=greetd.service graphical.target
+ConditionPathExists=!/var/lib/ark/firstboot.complete
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ark-firstboot
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
