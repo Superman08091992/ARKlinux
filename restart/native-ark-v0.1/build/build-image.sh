@@ -49,6 +49,19 @@ resolve_partitions(){
   return 1
 }
 
+apply_persistent_ark_layout(){
+  # Persistent state belongs to the Btrfs/image layer, not tmpfiles. This is
+  # deliberately separate from /run/ark, which is volatile and recreated by
+  # systemd-tmpfiles at normal boot.
+  arch-chroot "$MNT" install -d -m 0755 -o root -g root /ark
+  arch-chroot "$MNT" install -d -m 0770 -o arkd -g ark-state /ark/memory /ark/evidence /ark/state /ark/checkpoints /ark/quarantine /ark/storage /ark/logs
+  arch-chroot "$MNT" install -d -m 0770 -o ark-kj -g ark-state /ark/kj
+  arch-chroot "$MNT" install -d -m 0750 -o root -g ark-state /ark/graveyard /ark/models /ark/config
+  arch-chroot "$MNT" install -d -m 0770 -o ark-trading -g ark-state /ark/trading
+  arch-chroot "$MNT" install -d -m 0750 -o root -g ark-state /etc/ark /etc/ark/trading
+  arch-chroot "$MNT" install -d -m 0770 -o arkd -g ark-state /var/lib/ark
+}
+
 [[ ${EUID:-$(id -u)} -eq 0 ]] || { echo "ERROR: build-image.sh must run as root" >&2; exit 1; }
 [[ -f "$OVERLAY" ]] || { echo "ERROR: private A.R.K. overlay missing: $OVERLAY" >&2; exit 1; }
 stage "prepare raw disk"
@@ -83,18 +96,15 @@ stage "generate locale"
 arch-chroot "$MNT" locale-gen
 
 stage "apply A.R.K. system users"
-# Process only the release-owned sysusers file. Running every vendor rule during
-# image assembly is unnecessary and can make the build depend on unrelated
-# chroot state.
 arch-chroot "$MNT" systemd-sysusers /usr/lib/sysusers.d/ark-native.conf
 
-stage "apply persistent A.R.K. directories"
-# /run/ark is explicitly volatile. arch-chroot exposes a runtime /run mount, so
-# creating it during image assembly can target chroot runtime state instead of
-# persistent image state. Restrict this pass to persistent /ark and /etc/ark;
-# normal boot-time systemd-tmpfiles creates /run/ark from the same config.
-arch-chroot "$MNT" systemd-tmpfiles --create --prefix=/ark --prefix=/etc/ark /usr/lib/tmpfiles.d/ark-native.conf
-mkdir -p "$MNT/var/lib/ark"
+stage "apply persistent A.R.K. Btrfs layout"
+apply_persistent_ark_layout
+
+stage "validate volatile tmpfiles contract without creating it"
+# ark-native.conf now contains only /run/ark runtime paths. Validate syntax at
+# image-build time, but do not create volatile state inside the build chroot.
+arch-chroot "$MNT" systemd-tmpfiles --create --dry-run /usr/lib/tmpfiles.d/ark-native.conf
 
 stage "validate compatibility namespace"
 [[ -L "$MNT/opt/ark" ]] || { echo "ERROR: /opt/ark compatibility symlink missing" >&2; exit 1; }
