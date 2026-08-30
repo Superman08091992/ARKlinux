@@ -15,15 +15,29 @@ VARS="$OUTDIR/OVMF_VARS.fd"
 cp "$VARS_SRC" "$VARS"
 
 set +e
-timeout 600 qemu-system-x86_64 \
+setsid timeout 600 qemu-system-x86_64 \
   -machine q35,accel=tcg \
   -cpu max -smp 2 -m 4096 \
   -drive if=pflash,format=raw,readonly=on,file="$CODE" \
   -drive if=pflash,format=raw,file="$VARS" \
   -drive file="$RAW",format=raw,if=virtio,cache=unsafe \
   -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
-  -display none -monitor none -serial stdio -no-reboot 2>&1 | tee "$LOG"
-RC=${PIPESTATUS[0]}
+  -display none -monitor none -serial stdio -no-reboot > >(tee "$LOG") 2>&1 &
+QEMU_RUNNER_PID=$!
+STOPPED_ON_MARKER=0
+while kill -0 "$QEMU_RUNNER_PID" 2>/dev/null; do
+  if grep -q 'ARK_NATIVE_BOOT_PROOF=PASS\|ARK_NATIVE_BOOT_PROOF=FAIL' "$LOG" 2>/dev/null; then
+    STOPPED_ON_MARKER=1
+    kill -TERM -- "-$QEMU_RUNNER_PID" 2>/dev/null || true
+    break
+  fi
+  sleep 1
+done
+wait "$QEMU_RUNNER_PID"
+RC=$?
+if [[ "$STOPPED_ON_MARKER" == "1" ]] && grep -q 'ARK_NATIVE_BOOT_PROOF=PASS' "$LOG"; then
+  RC=0
+fi
 set -e
 
 if ! grep -q 'ARK_NATIVE_BOOT_PROOF=PASS' "$LOG"; then
