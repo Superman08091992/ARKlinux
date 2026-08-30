@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
+  exec sudo "$0" "$@"
+fi
+
+PROFILE="${1:-nvidia}"
+case "$PROFILE" in
+  nvidia)
+    pacman -Syu --noconfirm --needed nvidia-open nvidia-utils nvidia-settings cuda cudnn nvidia-container-toolkit ollama ollama-cuda uv
+    ;;
+  cpu)
+    pacman -Syu --noconfirm --needed ollama uv
+    ;;
+  *)
+    echo "usage: ark-bootstrap-ai [nvidia|cpu]" >&2
+    exit 2
+    ;;
+esac
+
+install -d -m0750 -o root -g root /ark/venvs
+if [[ ! -x /ark/venvs/ai/bin/python ]]; then
+  uv python install 3.12
+  uv venv --python 3.12 /ark/venvs/ai
+fi
+
+uv pip install --python /ark/venvs/ai/bin/python \
+  fastapi uvicorn pydantic accelerate transformers safetensors tokenizers \
+  sentence-transformers httpx websockets psutil numpy scipy pandas \
+  requests beautifulsoup4 lxml selenium playwright aiohttp tenacity python-dateutil
+
+if [[ "$PROFILE" == "nvidia" ]]; then
+  uv pip install --python /ark/venvs/ai/bin/python torch triton vllm nvidia-nccl-cu12 || {
+    echo "Core NVIDIA packages installed, but one or more Python GPU wheels were unavailable for this hardware/runtime combination." >&2
+    exit 3
+  }
+fi
+
+/ark/venvs/ai/bin/python -m playwright install chromium
+printf 'AI profile %s installed under /ark/venvs/ai\n' "$PROFILE"
