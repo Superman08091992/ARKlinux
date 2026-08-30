@@ -1,0 +1,15 @@
+[Unit]
+Description=ARKlinux native architecture boot proof
+After=ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service
+Wants=ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service
+ConditionPathExists=!/var/lib/ark/boot-proof.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ark-boot-proof
+StandardOutput=journal+console
+StandardError=journal+console
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
