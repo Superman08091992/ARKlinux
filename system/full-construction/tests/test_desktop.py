@@ -99,6 +99,25 @@ def test_root_broker_service_is_hardened():
     assert "ReadWritePaths=/run/ark-desktop /var/log/ark-desktop" in service
 
 
+def test_native_panel_surfaces_outcome_provenance_without_guessing():
+    source = (ROOT / "rootfs/usr/lib/ark-desktop/ark-desktop.py").read_text()
+    for term in (
+        "RUNTIME_URL",
+        'runtime_get("/status"',
+        "classification",
+        "evidence_level",
+        "blocker_demonstrated",
+        "user_action_required",
+        "premature_stop",
+        "reasoning_failure",
+        "unknown_internal",
+        "Cause not inferred",
+    ):
+        assert term in source
+    assert "ark-runtime-api.service" in source
+    assert "ark-trading.service" in source
+
+
 def test_operator_console_surfaces_terminal_outcome_provenance():
     source = (ROOT / "rootfs/usr/lib/ark-desktop/ark-agentctl.py").read_text()
     for term in (
