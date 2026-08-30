@@ -14,6 +14,8 @@ ESP_DEV=""
 ROOT_DEV=""
 KPARTX_ACTIVE=0
 
+stage(){ printf '\n==> %s\n' "$*"; }
+
 cleanup(){
   set +e
   mountpoint -q "$MNT/boot" && umount "$MNT/boot"
@@ -49,6 +51,7 @@ resolve_partitions(){
 
 [[ ${EUID:-$(id -u)} -eq 0 ]] || { echo "ERROR: build-image.sh must run as root" >&2; exit 1; }
 [[ -f "$OVERLAY" ]] || { echo "ERROR: private A.R.K. overlay missing: $OVERLAY" >&2; exit 1; }
+stage "prepare raw disk"
 rm -rf "$WORK"; mkdir -p "$OUT" "$MNT"; rm -f "$IMG" "$COMPRESSED"
 truncate -s "${SIZE_GIB}G" "$IMG"
 sgdisk --zap-all "$IMG"
@@ -57,6 +60,8 @@ sgdisk -n 2:0:0 -t 2:8300 -c 2:ARKROOT "$IMG"
 LOOP="$(losetup --find --show --partscan "$IMG")"
 resolve_partitions
 printf 'Partition map: loop=%s esp=%s root=%s\n' "$LOOP" "$ESP_DEV" "$ROOT_DEV"
+
+stage "format and create native Btrfs topology"
 mkfs.fat -F32 -n ARKESP "$ESP_DEV"
 mkfs.btrfs -f -L ARKROOT "$ROOT_DEV"
 mount "$ROOT_DEV" "$MNT"
@@ -65,17 +70,43 @@ umount "$MNT"
 mount -o noatime,compress=zstd:3,subvol=@ark "$ROOT_DEV" "$MNT"
 while IFS=$'\t' read -r subvol mp opts owner group mode cls; do [[ -z "${subvol:-}" || "$subvol" == \#* || "$mp" == "/" ]] && continue; mkdir -p "$MNT$mp"; mount -o "subvol=$subvol,$opts" "$ROOT_DEV" "$MNT$mp"; done < "$RELROOT/config/subvolumes.tsv"
 mkdir -p "$MNT/boot"; mount "$ESP_DEV" "$MNT/boot"
+
+stage "install Arch package set"
 mapfile -t PKGS < <(grep -vE '^\s*(#|$)' "$RELROOT/config/packages.x86_64"); pacstrap -K "$MNT" "${PKGS[@]}"
+
+stage "install ARKlinux rootfs and private A.R.K. overlay"
 cp -a "$RELROOT/rootfs/." "$MNT/"; tar --zstd -xf "$OVERLAY" -C "$MNT"
 chmod 0755 "$MNT/usr/local/bin/ark-session" "$MNT/usr/local/bin/ark-bootstrap-ai" "$MNT/usr/local/sbin/ark-firstboot" "$MNT/usr/local/sbin/ark-boot-proof" "$MNT/usr/lib/ark-display/adapter.py"
-printf 'ARKlinux\n' > "$MNT/etc/hostname"; printf 'LANG=en_US.UTF-8\n' > "$MNT/etc/locale.conf"; sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' "$MNT/etc/locale.gen"; ln -sf /usr/share/zoneinfo/America/Los_Angeles "$MNT/etc/localtime"; arch-chroot "$MNT" locale-gen
-arch-chroot "$MNT" systemd-sysusers; arch-chroot "$MNT" systemd-tmpfiles --create; mkdir -p "$MNT/var/lib/ark"
-arch-chroot "$MNT" useradd -m -G wheel,audio,video,input,storage -s /bin/bash operator || true; arch-chroot "$MNT" passwd -l operator || true
+printf 'ARKlinux\n' > "$MNT/etc/hostname"; printf 'LANG=en_US.UTF-8\n' > "$MNT/etc/locale.conf"; sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' "$MNT/etc/locale.gen"; ln -sf /usr/share/zoneinfo/America/Los_Angeles "$MNT/etc/localtime"
+
+stage "generate locale"
+arch-chroot "$MNT" locale-gen
+
+stage "apply A.R.K. system users"
+# Process only the release-owned sysusers file. Running every vendor rule during
+# image assembly is unnecessary and can make the build depend on unrelated
+# chroot state.
+arch-chroot "$MNT" systemd-sysusers /usr/lib/sysusers.d/ark-native.conf
+
+stage "apply A.R.K. runtime directories"
+# Likewise, create only the A.R.K. paths here. The full systemd-tmpfiles set is
+# applied normally at boot, where runtime-only paths and namespaces exist.
+arch-chroot "$MNT" systemd-tmpfiles --create /usr/lib/tmpfiles.d/ark-native.conf
+mkdir -p "$MNT/var/lib/ark"
+
+stage "create operator account"
+arch-chroot "$MNT" useradd -m -G wheel,audio,video,input,storage -s /bin/bash operator || true
+arch-chroot "$MNT" passwd -l operator || true
 printf '%%wheel ALL=(ALL:ALL) ALL\n' > "$MNT/etc/sudoers.d/10-wheel"; chmod 0440 "$MNT/etc/sudoers.d/10-wheel"
+
+stage "write fstab and swapfile"
 ROOTUUID="$(blkid -s UUID -o value "$ROOT_DEV")"; ESPUUID="$(blkid -s UUID -o value "$ESP_DEV")"; : > "$MNT/etc/fstab"
 while IFS=$'\t' read -r subvol mp opts owner group mode cls; do [[ -z "${subvol:-}" || "$subvol" == \#* ]] && continue; printf 'UUID=%s\t%s\tbtrfs\tsubvol=%s,%s\t0 0\n' "$ROOTUUID" "$mp" "$subvol" "$opts" >> "$MNT/etc/fstab"; done < "$RELROOT/config/subvolumes.tsv"
 printf 'UUID=%s\t/boot\tvfat\tumask=0077\t0 2\n' "$ESPUUID" >> "$MNT/etc/fstab"
-arch-chroot "$MNT" btrfs filesystem mkswapfile --size "${SWAP_GIB}G" /swap/swapfile; printf '/swap/swapfile none swap defaults 0 0\n' >> "$MNT/etc/fstab"
+arch-chroot "$MNT" btrfs filesystem mkswapfile --size "${SWAP_GIB}G" /swap/swapfile
+printf '/swap/swapfile none swap defaults 0 0\n' >> "$MNT/etc/fstab"
+
+stage "install systemd-boot"
 arch-chroot "$MNT" bootctl --path=/boot install --no-variables; mkdir -p "$MNT/boot/loader/entries"
 cat > "$MNT/boot/loader/loader.conf" <<EOF
 default arklinux.conf
@@ -95,11 +126,21 @@ linux /vmlinuz-linux
 initrd /initramfs-linux-fallback.img
 options root=UUID=$ROOTUUID rootflags=subvol=@ark rw audit=1 console=tty0 console=ttyS0,115200n8
 EOF
+
+stage "regenerate initramfs"
 arch-chroot "$MNT" mkinitcpio -P
+
+stage "enable native services"
 arch-chroot "$MNT" systemctl enable NetworkManager.service nftables.service chronyd.service greetd.service ark-firstboot.service ark.target ark-display-adapter.service ark-boot-proof.service
 arch-chroot "$MNT" systemctl set-default graphical.target
+
+stage "validate native A.R.K. contract"
 arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -L /opt/ark && test "$(readlink /opt/ark)" = /ark'
 arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service'
 arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service'
+
+stage "collect image evidence"
 mkdir -p "$OUT/evidence"; cp "$RELROOT/config/subvolumes.tsv" "$OUT/evidence/subvolumes.tsv"; cp "$RELROOT/config/packages.x86_64" "$OUT/evidence/packages.requested"; cp "$RELROOT/config/dependencies.md" "$OUT/evidence/dependencies.md"; cp "$MNT/etc/fstab" "$OUT/evidence/fstab"; arch-chroot "$MNT" pacman -Q > "$OUT/evidence/packages.installed"; btrfs subvolume list "$MNT" > "$OUT/evidence/btrfs-subvolumes.txt"; findmnt -R "$MNT" > "$OUT/evidence/mount-tree.txt"; cp "$MNT/etc/ark/ARK_GENESIS_COMMIT" "$OUT/evidence/ARK_GENESIS_COMMIT"
+
+stage "finalize and compress image"
 sync; cleanup; LOOP=""; KPARTX_ACTIVE=0; sha256sum "$IMG" > "$OUT/RAW-SHA256SUMS"; zstd -19 -T0 --rm "$IMG" -o "$COMPRESSED"; sha256sum "$COMPRESSED" > "$OUT/SHA256SUMS"; printf 'ARKlinux native release image: %s\n' "$COMPRESSED"
