@@ -65,7 +65,10 @@ NVIDIA packages are an optional release profile and should only be activated for
 
 ## 7. Local inference/model host — pacman / isolated runtime
 
-- ollama-cuda when NVIDIA profile is enabled; otherwise ollama
+- `ollama` is part of the native base image and is supervised by `ollama.service`
+- `nomic-embed-text:latest` is provisioned by `ark-embedding-model.service`; the exact resolved Ollama digest is recorded before use
+- the real embedding contract is `ark-semantic-v1`, L2-normalized, exactly 768 dimensions
+- ollama-cuda may replace the CPU package when the NVIDIA profile is enabled
 - llama.cpp/ggml CUDA capability may be added as a separate package profile
 
 ## 8. Isolated Python AI environment — venv/container only

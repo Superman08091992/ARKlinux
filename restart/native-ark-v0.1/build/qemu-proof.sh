@@ -15,7 +15,7 @@ VARS="$OUTDIR/OVMF_VARS.fd"
 cp "$VARS_SRC" "$VARS"
 
 set +e
-timeout 300 qemu-system-x86_64 \
+timeout 600 qemu-system-x86_64 \
   -machine q35,accel=tcg \
   -cpu max -smp 2 -m 4096 \
   -drive if=pflash,format=raw,readonly=on,file="$CODE" \
@@ -32,7 +32,7 @@ if ! grep -q 'ARK_NATIVE_BOOT_PROOF=PASS' "$LOG"; then
   exit 1
 fi
 
-grep 'ARK_STATUS_PROBE=PASS\|ARK_NATIVE_BOOT_PROOF=PASS' "$LOG" > "$OUTDIR/proof.txt"
+grep 'ARK_STATUS_PROBE=PASS\|ARK_REAL_EMBEDDING_PROBE=PASS\|ARK_NATIVE_BOOT_PROOF=PASS' "$LOG" > "$OUTDIR/proof.txt"
 printf 'qemu_exit=%s\n' "$RC" >> "$OUTDIR/proof.txt"
 printf 'QEMU native boot proof passed.\n'
 rm -f "$RAW"

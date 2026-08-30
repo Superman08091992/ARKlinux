@@ -32,7 +32,7 @@ done
 [[ -d /ark/runtime ]] || fail 'missing:/ark/runtime'
 [[ -L /opt/ark && "$(readlink /opt/ark)" == /ark ]] || fail 'invalid:/opt/ark_compatibility_symlink'
 
-for unit in ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service; do
+for unit in ollama.service ark-embedding-model.service ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service; do
   wait_active "$unit"
 done
 
@@ -56,6 +56,70 @@ for _attempt in range(30):
         time.sleep(1)
 else:
     raise SystemExit(f'status_probe_not_ready:{last_error}')
+PY
+
+
+python - <<'PY' || fail 'real_embedding_probe_failed'
+import json
+import time
+import urllib.error
+import urllib.request
+
+BASE = "http://127.0.0.1:18080"
+
+def request_json(path, payload=None):
+    data = None if payload is None else json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        BASE + path,
+        data=data,
+        headers={"Content-Type": "application/json"} if data is not None else {},
+        method="POST" if data is not None else "GET",
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+last_error = None
+for _attempt in range(60):
+    try:
+        status = request_json("/graveyard/vector/status")
+        if status.get("ok") is True:
+            break
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        last_error = exc
+    time.sleep(1)
+else:
+    raise SystemExit(f"runtime_vector_api_not_ready:{last_error}")
+
+record = {
+    "schema_version": "1.0",
+    "graveyard_id": "gy:qemu:nomic-embed-text:768:v1",
+    "type": "verified_fact",
+    "fact": {"text": "ARKlinux real nomic embedding proof"},
+    "verification": {"state": "verified"},
+    "provenance": {"source": "qemu-native-boot-proof"},
+}
+sealed = request_json("/graveyard/vector/seal", record)
+embedding = sealed.get("embedding") or {}
+artifact = ((sealed.get("result") or {}).get("derived") or {}).get("embeddings", {}).get("ark-semantic-v1", {})
+vector = artifact.get("vector") or []
+model = embedding.get("model") or {}
+if embedding.get("dimension") != 768 or len(vector) != 768:
+    raise SystemExit("real_embedding_dimension_mismatch")
+if model.get("name") != "nomic-embed-text:latest" or not model.get("digest"):
+    raise SystemExit("real_embedding_model_identity_missing")
+searched = request_json(
+    "/graveyard/vector/search",
+    {"query": "ARKlinux real nomic embedding proof", "top_k": 1},
+)
+matches = searched.get("matches") or []
+if not matches or matches[0].get("graveyard_id") != record["graveyard_id"]:
+    raise SystemExit("real_embedding_search_miss")
+if matches[0].get("association_only") is not True:
+    raise SystemExit("real_embedding_association_boundary_missing")
+print(
+    "ARK_REAL_EMBEDDING_PROBE=PASS "
+    f"model={model['name']} digest={model['digest']} dimension={embedding['dimension']}"
+)
 PY
 
 mkdir -p /var/lib/ark

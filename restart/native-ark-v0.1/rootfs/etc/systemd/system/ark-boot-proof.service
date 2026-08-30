@@ -1,6 +1,7 @@
 [Unit]
 Description=ARKlinux native architecture boot proof
-After=ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service
+After=ollama.service ark-embedding-model.service ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service
+Requires=ollama.service ark-embedding-model.service
 Wants=ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service
 ConditionPathExists=!/var/lib/ark/boot-proof.json
 

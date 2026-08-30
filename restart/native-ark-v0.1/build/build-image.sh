@@ -89,7 +89,7 @@ mapfile -t PKGS < <(grep -vE '^\s*(#|$)' "$RELROOT/config/packages.x86_64"); pac
 
 stage "install ARKlinux rootfs and private A.R.K. overlay"
 cp -a "$RELROOT/rootfs/." "$MNT/"; tar --zstd -xf "$OVERLAY" -C "$MNT"
-chmod 0755 "$MNT/usr/local/bin/ark-session" "$MNT/usr/local/bin/ark-bootstrap-ai" "$MNT/usr/local/sbin/ark-firstboot" "$MNT/usr/local/sbin/ark-boot-proof" "$MNT/usr/lib/ark-display/adapter.py"
+chmod 0755 "$MNT/usr/local/bin/ark-session" "$MNT/usr/local/bin/ark-bootstrap-ai" "$MNT/usr/local/sbin/ark-firstboot" "$MNT/usr/local/sbin/ark-embedding-model" "$MNT/usr/local/sbin/ark-boot-proof" "$MNT/usr/lib/ark-display/adapter.py"
 printf 'ARKlinux\n' > "$MNT/etc/hostname"; printf 'LANG=en_US.UTF-8\n' > "$MNT/etc/locale.conf"; sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' "$MNT/etc/locale.gen"; ln -sf /usr/share/zoneinfo/America/Los_Angeles "$MNT/etc/localtime"
 
 stage "generate locale"
@@ -147,13 +147,13 @@ stage "regenerate initramfs"
 arch-chroot "$MNT" mkinitcpio -P
 
 stage "enable native services"
-arch-chroot "$MNT" systemctl enable NetworkManager.service nftables.service chronyd.service greetd.service ark-firstboot.service ark.target ark-display-adapter.service ark-boot-proof.service
+arch-chroot "$MNT" systemctl enable NetworkManager.service nftables.service chronyd.service greetd.service ollama.service ark-embedding-model.service ark-firstboot.service ark.target ark-display-adapter.service ark-boot-proof.service
 arch-chroot "$MNT" systemctl set-default graphical.target
 
 stage "validate native A.R.K. contract"
 arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -L /opt/ark && test "$(readlink /opt/ark)" = /ark'
-arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service'
-arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service'
+arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service'
+arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service'
 
 stage "collect image evidence"
 mkdir -p "$OUT/evidence"; cp "$RELROOT/config/subvolumes.tsv" "$OUT/evidence/subvolumes.tsv"; cp "$RELROOT/config/packages.x86_64" "$OUT/evidence/packages.requested"; cp "$RELROOT/config/dependencies.md" "$OUT/evidence/dependencies.md"; cp "$MNT/etc/fstab" "$OUT/evidence/fstab"; pacman --root "$MNT" --dbpath "$MNT/var/lib/pacman" --config /etc/pacman.conf -Q > "$OUT/evidence/packages.installed"; btrfs subvolume list "$MNT" > "$OUT/evidence/btrfs-subvolumes.txt"; findmnt -R "$MNT" > "$OUT/evidence/mount-tree.txt"; cp "$MNT/etc/ark/ARK_GENESIS_COMMIT" "$OUT/evidence/ARK_GENESIS_COMMIT"

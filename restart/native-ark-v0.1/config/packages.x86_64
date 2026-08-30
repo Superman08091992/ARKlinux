@@ -38,6 +38,7 @@ python-pip
 python-setuptools
 python-wheel
 python-virtualenv
+ollama
 plasma-desktop
 plasma-workspace
 kwin

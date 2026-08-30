@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MODEL="${ARK_EMBEDDING_MODEL:-nomic-embed-text:latest}"
+URL="${ARK_OLLAMA_URL:-http://127.0.0.1:11434}"
+export OLLAMA_HOST="$URL"
+
+fail(){
+  printf 'ARK_EMBEDDING_MODEL_READY=FAIL detail=%q\n' "$*" >&2
+  exit 1
+}
+
+for _attempt in {1..120}; do
+  curl -fsS "$URL/api/tags" >/dev/null 2>&1 && break
+  sleep 1
+done
+curl -fsS "$URL/api/tags" >/dev/null 2>&1 || fail 'ollama_api_not_ready'
+
+if ! curl -fsS "$URL/api/tags" | jq -e --arg model "$MODEL" 'any(.models[]?; ((.name // .model) == $model))' >/dev/null; then
+  ollama pull "$MODEL" || fail "model_pull_failed:$MODEL"
+fi
+
+TAGS="$(mktemp /var/lib/ark/.embedding-tags.XXXXXX)"
+EMBED="$(mktemp /var/lib/ark/.embedding-response.XXXXXX)"
+META="$(mktemp /var/lib/ark/.embedding-model.XXXXXX)"
+trap 'rm -f "$TAGS" "$EMBED" "$META"' EXIT
+
+curl -fsS "$URL/api/tags" > "$TAGS" || fail 'model_tags_unavailable'
+curl -fsS "$URL/api/embed" \
+  -H 'Content-Type: application/json' \
+  --data "$(jq -cn --arg model "$MODEL" '{model:$model,input:["ARKlinux embedding readiness proof"],truncate:false}')" \
+  > "$EMBED" || fail 'real_embedding_request_failed'
+
+python - "$TAGS" "$EMBED" "$META" "$MODEL" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+tags_path, embed_path, output_path, requested_model = sys.argv[1:]
+with open(tags_path, encoding="utf-8") as handle:
+    tags = json.load(handle)
+matches = [
+    item for item in tags.get("models", [])
+    if (item.get("name") or item.get("model")) == requested_model
+]
+if len(matches) != 1:
+    raise SystemExit("embedding_model_missing_or_ambiguous")
+digest = matches[0].get("digest")
+if not isinstance(digest, str) or not digest:
+    raise SystemExit("embedding_model_digest_missing")
+with open(embed_path, encoding="utf-8") as handle:
+    response = json.load(handle)
+embeddings = response.get("embeddings")
+if not isinstance(embeddings, list) or len(embeddings) != 1:
+    raise SystemExit("invalid_embedding_response")
+vector = embeddings[0]
+if not isinstance(vector, list) or len(vector) != 768:
+    raise SystemExit(f"embedding_dimension_mismatch:{len(vector) if isinstance(vector, list) else 'invalid'}")
+if not all(isinstance(value, (int, float)) for value in vector):
+    raise SystemExit("embedding_contains_non_numeric_value")
+metadata = {
+    "ready": True,
+    "model": requested_model,
+    "digest": digest,
+    "dimension": 768,
+    "provider": "ollama",
+    "url": "http://127.0.0.1:11434",
+    "verified_at_utc": datetime.now(timezone.utc).isoformat(),
+}
+with open(output_path, "w", encoding="utf-8") as handle:
+    json.dump(metadata, handle, sort_keys=True, separators=(",", ":"))
+    handle.write("\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+print(f"ARK_EMBEDDING_MODEL_READY=PASS model={requested_model} digest={digest} dimension=768")
+PY
+
+chmod 0640 "$META"
+mv -f "$META" /var/lib/ark/embedding-model.json
