@@ -27,7 +27,7 @@ trap cleanup EXIT
 
 clear_stale_build_state(){
   local stale_loop
-  if findmnt -rn -M "$MNT" >/dev/null 2>&1; then
+  if findmnt -rnR -M "$MNT" >/dev/null 2>&1; then
     stage "remove stale build mounts"
     if ! umount -R "$MNT"; then
       echo "ERROR: stale build mount is busy: $MNT" >&2
@@ -37,8 +37,9 @@ clear_stale_build_state(){
   fi
   while IFS= read -r stale_loop; do
     [[ -n "$stale_loop" ]] || continue
+    command -v kpartx >/dev/null 2>&1 && kpartx -d "$stale_loop" 2>/dev/null || true
     losetup -d "$stale_loop"
-  done < <(losetup -j "$IMG" --list --noheadings --output NAME 2>/dev/null || true)
+  done < <(losetup --list --noheadings --raw --output NAME --associated "$IMG" 2>/dev/null || true)
   if findmnt -rn -M "$MNT" >/dev/null 2>&1; then
     echo "ERROR: stale build mount remains after cleanup: $MNT" >&2
     findmnt -R -M "$MNT" >&2 || true
