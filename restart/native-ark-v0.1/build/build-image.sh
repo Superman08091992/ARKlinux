@@ -53,25 +53,20 @@ mount "${LOOP}p1" "$MNT/boot"
 mapfile -t PKGS < <(grep -vE '^\s*(#|$)' "$RELROOT/config/packages.x86_64")
 pacstrap -K "$MNT" "${PKGS[@]}"
 
-# Public ARKlinux restart overlay, then private A.R.K. overlay.
 cp -a "$RELROOT/rootfs/." "$MNT/"
 tar --zstd -xf "$OVERLAY" -C "$MNT"
 chmod 0755 "$MNT/usr/local/bin/ark-session" "$MNT/usr/local/bin/ark-bootstrap-ai" "$MNT/usr/local/sbin/ark-firstboot" "$MNT/usr/lib/ark-display/adapter.py"
 
-# Machine configuration.
 printf 'ARKlinux\n' > "$MNT/etc/hostname"
 printf 'LANG=en_US.UTF-8\n' > "$MNT/etc/locale.conf"
 sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' "$MNT/etc/locale.gen"
 ln -sf /usr/share/zoneinfo/America/Los_Angeles "$MNT/etc/localtime"
 arch-chroot "$MNT" locale-gen
 
-# Create system identities from both ARKlinux and private A.R.K. contracts.
 arch-chroot "$MNT" systemd-sysusers
 arch-chroot "$MNT" systemd-tmpfiles --create
 mkdir -p "$MNT/var/lib/ark"
 
-# Local operator account. Password is intentionally unset in the artifact and is
-# established interactively by ark-firstboot on the first real boot.
 arch-chroot "$MNT" useradd -m -G wheel,audio,video,input,storage -s /bin/bash operator || true
 arch-chroot "$MNT" passwd -l operator || true
 printf '%%wheel ALL=(ALL:ALL) ALL\n' > "$MNT/etc/sudoers.d/10-wheel"
@@ -101,20 +96,19 @@ cat > "$MNT/boot/loader/entries/arklinux.conf" <<EOF
 title ARKlinux Native v0.1
 linux /vmlinuz-linux
 initrd /initramfs-linux.img
-options root=UUID=$ROOTUUID rootflags=subvol=@ark rw quiet audit=1
+options root=UUID=$ROOTUUID rootflags=subvol=@ark rw quiet audit=1 console=tty0 console=ttyS0,115200n8
 EOF
 cat > "$MNT/boot/loader/entries/arklinux-fallback.conf" <<EOF
 title ARKlinux Native v0.1 (fallback)
 linux /vmlinuz-linux
 initrd /initramfs-linux-fallback.img
-options root=UUID=$ROOTUUID rootflags=subvol=@ark rw audit=1
+options root=UUID=$ROOTUUID rootflags=subvol=@ark rw audit=1 console=tty0 console=ttyS0,115200n8
 EOF
 arch-chroot "$MNT" mkinitcpio -P
 
 arch-chroot "$MNT" systemctl enable NetworkManager.service nftables.service chronyd.service greetd.service ark-firstboot.service ark.target ark-display-adapter.service
 arch-chroot "$MNT" systemctl set-default graphical.target
 
-# Static installed-system verification before sealing artifact.
 arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -L /opt/ark && test "$(readlink /opt/ark)" = /ark'
 arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service'
 arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-firstboot.service'
