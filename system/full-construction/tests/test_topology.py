@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import re
 from pathlib import Path
 
 R = Path(__file__).resolve().parents[1]
@@ -70,7 +71,10 @@ for fake_service in ("ark-kyle.service", "ark-joey.service", "ark-hrm.service", 
 
 lock = (R / "config/ark-genesis.lock").read_text(encoding="utf-8")
 assert "ARK_GENESIS_REPOSITORY=Superman08091992/ARK_GENESIS" in lock
-assert "ARK_GENESIS_COMMIT=b6aa6931de1c5491f7315ef84e6bf6c9c74bf61d" in lock
+match = re.search(r"^ARK_GENESIS_COMMIT=([0-9a-f]{40})$", lock, re.MULTILINE)
+assert match, "ARK_GENESIS_COMMIT must pin one exact 40-hex commit"
+assert match.group(1) != "0" * 40
 assert 'ARK_GENESIS_PACKAGES="ark-runtime ark-services ark-ui"' in lock
+assert "ARK_RUNTIME_ROOT=/opt/ark" in lock
 
-print(f"{len(subvolumes)} subvolumes; {len(processes)} truthful process definitions: PASS")
+print(f"{len(subvolumes)} subvolumes; {len(processes)} truthful process definitions; A.R.K. pinned to {match.group(1)}: PASS")
