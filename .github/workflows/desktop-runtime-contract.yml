@@ -38,7 +38,7 @@ jobs:
         run: bash system/full-construction/scripts/verify-desktop.sh
       - name: Verify topology contract
         run: bash system/full-construction/scripts/verify-topology.sh
-      - name: Verify private runtime lock shape
+      - name: Verify private runtime lock and reject active legacy contracts
         run: |
           LOCK=system/full-construction/config/ark-genesis.lock
           test -s "$LOCK"
@@ -46,4 +46,31 @@ jobs:
           grep -q '^ARK_RUNTIME_ROOT=/opt/ark$' "$LOCK"
           grep -q '^ARK_GENESIS_REPOSITORY=Superman08091992/ARK_GENESIS$' "$LOCK"
           grep -q '^ARK_GENESIS_PACKAGES="ark-runtime ark-services ark-ui"$' "$LOCK"
-          ! grep -R --line-number --exclude-dir=.git --exclude='*.md' '/ark/processes\|/ark/runtime\|ark-kyle.service\|ark-joey.service\|ark-hrm.service\|ark-kenny.service' system/full-construction/config system/full-construction/rootfs/etc/systemd system/full-construction/rootfs/usr/lib/ark-desktop
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          roots = [
+              Path('system/full-construction/config'),
+              Path('system/full-construction/rootfs/etc/systemd'),
+              Path('system/full-construction/rootfs/usr/lib/ark-desktop'),
+          ]
+          # `/opt/ark/...` is canonical and must not be mistaken for legacy `/ark/...`.
+          legacy = re.compile(r'(?<!/opt)/ark/(?:processes|runtime)|ark-(?:kyle|joey|hrm|kenny)\.service')
+          violations = []
+          for root in roots:
+              for path in root.rglob('*'):
+                  if not path.is_file() or path.suffix == '.md':
+                      continue
+                  try:
+                      lines = path.read_text(encoding='utf-8').splitlines()
+                  except UnicodeDecodeError:
+                      continue
+                  for number, line in enumerate(lines, 1):
+                      if line.lstrip().startswith('#'):
+                          continue
+                      if legacy.search(line):
+                          violations.append(f'{path}:{number}:{line.strip()}')
+          if violations:
+              raise SystemExit('Active legacy/fake-agent contract found:\n' + '\n'.join(violations))
+          PY
