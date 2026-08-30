@@ -6,6 +6,25 @@ fail(){
   exit 1
 }
 
+diagnose_unit(){
+  local unit="$1"
+  printf 'ARK_NATIVE_UNIT_DIAGNOSTIC_BEGIN unit=%s\n' "$unit" >&2
+  systemctl --no-pager --full status "$unit" >&2 || true
+  journalctl -b --no-pager -n 80 -u "$unit" >&2 || true
+  printf 'ARK_NATIVE_UNIT_DIAGNOSTIC_END unit=%s\n' "$unit" >&2
+}
+
+wait_active(){
+  local unit="$1"
+  local attempt
+  for attempt in {1..30}; do
+    systemctl is-active --quiet "$unit" && return 0
+    sleep 1
+  done
+  diagnose_unit "$unit"
+  fail "inactive:$unit"
+}
+
 for mp in / /ark/memory /ark/evidence /ark/state /ark/kj /ark/graveyard /ark/models /ark/checkpoints /ark/quarantine /ark/storage; do
   mountpoint -q "$mp" || fail "missing_mount:$mp"
 done
@@ -14,7 +33,7 @@ done
 [[ -L /opt/ark && "$(readlink /opt/ark)" == /ark ]] || fail 'invalid:/opt/ark_compatibility_symlink'
 
 for unit in ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service; do
-  systemctl is-active --quiet "$unit" || fail "inactive:$unit"
+  wait_active "$unit"
 done
 
 python - <<'PY' || exit 1
