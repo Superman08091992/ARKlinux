@@ -1,6 +1,6 @@
 # Public provenance contract for optional private A.R.K. package injection.
 # This file contains no private source or credentials.
 ARK_GENESIS_REPOSITORY=Superman08091992/ARK_GENESIS
-ARK_GENESIS_COMMIT=429d96461a6fac7ca12791603ee41231addd11c1
+ARK_GENESIS_COMMIT=4c53d5a8aae6804be4fa75e51ccd15f37dc43397
 ARK_GENESIS_PACKAGES="ark-runtime ark-services ark-ui"
 ARK_RUNTIME_ROOT=/opt/ark
