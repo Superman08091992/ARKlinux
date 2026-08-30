@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p /var/lib/ark
+if [[ -e /var/lib/ark/firstboot.complete ]]; then exit 0; fi
+clear
+printf '\nARKlinux first boot\n===================\nSet the local operator password. This is required for sudo/admin actions.\n\n'
+until passwd operator; do
+  printf '\nPassword was not changed. Try again.\n'
+done
+touch /var/lib/ark/firstboot.complete
+sync
+printf '\nARKlinux setup complete. The graphical login will start now.\n'
+sleep 2
