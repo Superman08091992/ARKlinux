@@ -96,10 +96,18 @@ def clear():
 
 def print_last_outcome(status):
     outcomes = status.get("outcomes") or {}
-    record = outcomes.get("last_outcome")
     print("\nLast terminal outcome:")
+    if outcomes.get("available") is False:
+        print("  DIAGNOSTICS:  UNAVAILABLE")
+        print(f"  error:        {outcomes.get('diagnostic_error') or 'cause-reporting subsystem unavailable'}")
+        print("  last cause:   NOT RELIABLY AVAILABLE")
+        print("  user action:  none automatically required")
+        print("  DIAGNOSIS: A.R.K. cannot currently prove the last task cause; do not infer policy, product, compute, context, or user error from missing diagnostics.")
+        return
+    record = outcomes.get("last_outcome")
     if not record:
         print("  none recorded")
+        print("  user action:  none required")
         return
     classification = record.get("classification", "unknown")
     state = record.get("state", "unknown")
@@ -117,6 +125,10 @@ def print_last_outcome(status):
         print(f"  summary:      {record.get('summary')}")
     if record.get("detail"):
         print(f"  detail:       {record.get('detail')}")
+    if record.get("diagnostic_persisted") is False:
+        print(f"  persistence:  FAILED ({record.get('diagnostic_error') or 'unknown persistence error'})")
+    elif record.get("diagnostic_persisted") is True:
+        print("  persistence:  durable")
     if record.get("user_action_required"):
         print(f"  USER ACTION:  {record.get('user_action') or 'required; reason not supplied'}")
     else:
@@ -140,6 +152,7 @@ def dashboard():
         runtime_ok = bool(health.get("ok"))
         authority = status.get("authority") or {}
         runtime_root = status.get("runtime_root", "unknown")
+        outcomes = status.get("outcomes") or {}
         print(f"Runtime: {'READY' if runtime_ok else 'DEGRADED'}  root={runtime_root}")
         print(
             "Authority: mode={}  real-tools={}  AEM={}".format(
@@ -148,12 +161,14 @@ def dashboard():
                 authority.get("aem_role", "unknown"),
             )
         )
+        diagnostic_state = "AVAILABLE" if outcomes.get("available", True) else "UNAVAILABLE"
         print(
-            "Evidence: {} records   Bus: {} events   Outcomes: {} records / chain={}".format(
+            "Evidence: {} records   Bus: {} events   Outcomes: {} / {} records / chain={}".format(
                 (status.get("evidence") or {}).get("record_count", "?"),
                 (status.get("bus") or {}).get("event_count", "?"),
-                (status.get("outcomes") or {}).get("record_count", "?"),
-                "VALID" if (status.get("outcomes") or {}).get("chain_valid") else "INVALID/UNKNOWN",
+                diagnostic_state,
+                outcomes.get("record_count", "?"),
+                "VALID" if outcomes.get("chain_valid") else "INVALID/UNKNOWN",
             )
         )
         print_last_outcome(status)
@@ -226,6 +241,9 @@ unknown_internal.
 Evidence levels are separate from the outcome: observed, provider_reported,
 inferred, unverified. If the platform does not expose enough telemetry to prove a
 cause, A.R.K. must say unknown_internal rather than inventing one.
+
+If outcome diagnostics themselves become unavailable, the console says so explicitly
+and does not turn missing telemetry into a guessed task cause.
 
 Service names: runtime, status-api, trading, hardwared
 
