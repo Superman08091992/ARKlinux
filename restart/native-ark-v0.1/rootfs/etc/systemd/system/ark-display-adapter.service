@@ -1,0 +1,23 @@
+[Unit]
+Description=ARKlinux read-only system-to-display adapter
+After=ark-local-api.service
+Wants=ark-local-api.service
+
+[Service]
+Type=simple
+User=ark-display
+Group=ark-display
+ExecStart=/usr/bin/python /usr/lib/ark-display/adapter.py
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RestrictAddressFamilies=AF_UNIX AF_INET
+IPAddressDeny=any
+IPAddressAllow=localhost
+ReadWritePaths=/run/ark-display
+
+[Install]
+WantedBy=graphical.target
