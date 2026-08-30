@@ -10,20 +10,61 @@ SIZE_GIB="${ARKLINUX_IMAGE_SIZE_GIB:-24}"
 SWAP_GIB="${ARKLINUX_SWAP_GIB:-4}"
 MNT="$WORK/mnt"
 LOOP=""
-cleanup(){ set +e; mountpoint -q "$MNT/boot" && umount "$MNT/boot"; while mountpoint -q "$MNT"; do umount -R "$MNT" 2>/dev/null || break; done; [[ -n "$LOOP" ]] && losetup -d "$LOOP" 2>/dev/null || true; }
+ESP_DEV=""
+ROOT_DEV=""
+KPARTX_ACTIVE=0
+
+cleanup(){
+  set +e
+  mountpoint -q "$MNT/boot" && umount "$MNT/boot"
+  while mountpoint -q "$MNT"; do umount -R "$MNT" 2>/dev/null || break; done
+  if [[ "$KPARTX_ACTIVE" == "1" && -n "$LOOP" ]]; then kpartx -d "$LOOP" 2>/dev/null || true; fi
+  [[ -n "$LOOP" ]] && losetup -d "$LOOP" 2>/dev/null || true
+}
 trap cleanup EXIT
+
+resolve_partitions(){
+  local base
+  base="$(basename "$LOOP")"
+  partx -u "$LOOP" 2>/dev/null || partx -a "$LOOP" 2>/dev/null || true
+  sleep 1
+  if [[ -b "${LOOP}p1" && -b "${LOOP}p2" ]]; then
+    ESP_DEV="${LOOP}p1"
+    ROOT_DEV="${LOOP}p2"
+    return 0
+  fi
+  command -v kpartx >/dev/null 2>&1 || { echo "ERROR: loop partition nodes absent and kpartx is unavailable" >&2; return 1; }
+  kpartx -av "$LOOP"
+  KPARTX_ACTIVE=1
+  ESP_DEV="/dev/mapper/${base}p1"
+  ROOT_DEV="/dev/mapper/${base}p2"
+  for _ in {1..20}; do
+    [[ -b "$ESP_DEV" && -b "$ROOT_DEV" ]] && return 0
+    sleep 0.25
+  done
+  echo "ERROR: partition devices unavailable after partx/kpartx: $ESP_DEV $ROOT_DEV" >&2
+  ls -l /dev/mapper /dev/${base}* 2>/dev/null || true
+  return 1
+}
+
 [[ ${EUID:-$(id -u)} -eq 0 ]] || { echo "ERROR: build-image.sh must run as root" >&2; exit 1; }
 [[ -f "$OVERLAY" ]] || { echo "ERROR: private A.R.K. overlay missing: $OVERLAY" >&2; exit 1; }
 rm -rf "$WORK"; mkdir -p "$OUT" "$MNT"; rm -f "$IMG" "$COMPRESSED"
 truncate -s "${SIZE_GIB}G" "$IMG"
-sgdisk --zap-all "$IMG"; sgdisk -n 1:1MiB:+1GiB -t 1:ef00 -c 1:ARKESP "$IMG"; sgdisk -n 2:0:0 -t 2:8300 -c 2:ARKROOT "$IMG"
+sgdisk --zap-all "$IMG"
+sgdisk -n 1:1MiB:+1GiB -t 1:ef00 -c 1:ARKESP "$IMG"
+sgdisk -n 2:0:0 -t 2:8300 -c 2:ARKROOT "$IMG"
 LOOP="$(losetup --find --show --partscan "$IMG")"
-mkfs.fat -F32 -n ARKESP "${LOOP}p1"; mkfs.btrfs -f -L ARKROOT "${LOOP}p2"; mount "${LOOP}p2" "$MNT"
+resolve_partitions
+printf 'Partition map: loop=%s esp=%s root=%s\n' "$LOOP" "$ESP_DEV" "$ROOT_DEV"
+mkfs.fat -F32 -n ARKESP "$ESP_DEV"
+mkfs.btrfs -f -L ARKROOT "$ROOT_DEV"
+mount "$ROOT_DEV" "$MNT"
 while IFS=$'\t' read -r subvol mp opts owner group mode cls; do [[ -z "${subvol:-}" || "$subvol" == \#* ]] && continue; btrfs subvolume create "$MNT/$subvol"; done < "$RELROOT/config/subvolumes.tsv"
 umount "$MNT"
-mount -o noatime,compress=zstd:3,subvol=@ark "${LOOP}p2" "$MNT"
-while IFS=$'\t' read -r subvol mp opts owner group mode cls; do [[ -z "${subvol:-}" || "$subvol" == \#* || "$mp" == "/" ]] && continue; mkdir -p "$MNT$mp"; mount -o "subvol=$subvol,$opts" "${LOOP}p2" "$MNT$mp"; done < "$RELROOT/config/subvolumes.tsv"
-mkdir -p "$MNT/boot"; mount "${LOOP}p1" "$MNT/boot"
+mount -o noatime,compress=zstd:3,subvol=@ark "$ROOT_DEV" "$MNT"
+while IFS=$'\t' read -r subvol mp opts owner group mode cls; do [[ -z "${subvol:-}" || "$subvol" == \#* || "$mp" == "/" ]] && continue; mkdir -p "$MNT$mp"; mount -o "subvol=$subvol,$opts" "$ROOT_DEV" "$MNT$mp"; done < "$RELROOT/config/subvolumes.tsv"
+mkdir -p "$MNT/boot"; mount "$ESP_DEV" "$MNT/boot"
 mapfile -t PKGS < <(grep -vE '^\s*(#|$)' "$RELROOT/config/packages.x86_64"); pacstrap -K "$MNT" "${PKGS[@]}"
 cp -a "$RELROOT/rootfs/." "$MNT/"; tar --zstd -xf "$OVERLAY" -C "$MNT"
 chmod 0755 "$MNT/usr/local/bin/ark-session" "$MNT/usr/local/bin/ark-bootstrap-ai" "$MNT/usr/local/sbin/ark-firstboot" "$MNT/usr/local/sbin/ark-boot-proof" "$MNT/usr/lib/ark-display/adapter.py"
@@ -31,7 +72,7 @@ printf 'ARKlinux\n' > "$MNT/etc/hostname"; printf 'LANG=en_US.UTF-8\n' > "$MNT/e
 arch-chroot "$MNT" systemd-sysusers; arch-chroot "$MNT" systemd-tmpfiles --create; mkdir -p "$MNT/var/lib/ark"
 arch-chroot "$MNT" useradd -m -G wheel,audio,video,input,storage -s /bin/bash operator || true; arch-chroot "$MNT" passwd -l operator || true
 printf '%%wheel ALL=(ALL:ALL) ALL\n' > "$MNT/etc/sudoers.d/10-wheel"; chmod 0440 "$MNT/etc/sudoers.d/10-wheel"
-ROOTUUID="$(blkid -s UUID -o value "${LOOP}p2")"; ESPUUID="$(blkid -s UUID -o value "${LOOP}p1")"; : > "$MNT/etc/fstab"
+ROOTUUID="$(blkid -s UUID -o value "$ROOT_DEV")"; ESPUUID="$(blkid -s UUID -o value "$ESP_DEV")"; : > "$MNT/etc/fstab"
 while IFS=$'\t' read -r subvol mp opts owner group mode cls; do [[ -z "${subvol:-}" || "$subvol" == \#* ]] && continue; printf 'UUID=%s\t%s\tbtrfs\tsubvol=%s,%s\t0 0\n' "$ROOTUUID" "$mp" "$subvol" "$opts" >> "$MNT/etc/fstab"; done < "$RELROOT/config/subvolumes.tsv"
 printf 'UUID=%s\t/boot\tvfat\tumask=0077\t0 2\n' "$ESPUUID" >> "$MNT/etc/fstab"
 arch-chroot "$MNT" btrfs filesystem mkswapfile --size "${SWAP_GIB}G" /swap/swapfile; printf '/swap/swapfile none swap defaults 0 0\n' >> "$MNT/etc/fstab"
@@ -61,4 +102,4 @@ arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -L /opt/ark && te
 arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service'
 arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service'
 mkdir -p "$OUT/evidence"; cp "$RELROOT/config/subvolumes.tsv" "$OUT/evidence/subvolumes.tsv"; cp "$RELROOT/config/packages.x86_64" "$OUT/evidence/packages.requested"; cp "$RELROOT/config/dependencies.md" "$OUT/evidence/dependencies.md"; cp "$MNT/etc/fstab" "$OUT/evidence/fstab"; arch-chroot "$MNT" pacman -Q > "$OUT/evidence/packages.installed"; btrfs subvolume list "$MNT" > "$OUT/evidence/btrfs-subvolumes.txt"; findmnt -R "$MNT" > "$OUT/evidence/mount-tree.txt"; cp "$MNT/etc/ark/ARK_GENESIS_COMMIT" "$OUT/evidence/ARK_GENESIS_COMMIT"
-sync; cleanup; LOOP=""; sha256sum "$IMG" > "$OUT/RAW-SHA256SUMS"; zstd -19 -T0 --rm "$IMG" -o "$COMPRESSED"; sha256sum "$COMPRESSED" > "$OUT/SHA256SUMS"; printf 'ARKlinux native release image: %s\n' "$COMPRESSED"
+sync; cleanup; LOOP=""; KPARTX_ACTIVE=0; sha256sum "$IMG" > "$OUT/RAW-SHA256SUMS"; zstd -19 -T0 --rm "$IMG" -o "$COMPRESSED"; sha256sum "$COMPRESSED" > "$OUT/SHA256SUMS"; printf 'ARKlinux native release image: %s\n' "$COMPRESSED"
