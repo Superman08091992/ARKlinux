@@ -36,13 +36,26 @@ for unit in ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark
   wait_active "$unit"
 done
 
-python - <<'PY' || exit 1
-import json, urllib.request
-with urllib.request.urlopen('http://127.0.0.1:8081/status', timeout=5) as r:
-    value=json.loads(r.read().decode())
-if not isinstance(value, dict):
-    raise SystemExit('status_not_object')
-print('ARK_STATUS_PROBE=PASS')
+python - <<'PY' || fail 'status_probe_failed'
+import json
+import time
+import urllib.error
+import urllib.request
+
+last_error = None
+for _attempt in range(30):
+    try:
+        with urllib.request.urlopen('http://127.0.0.1:8081/status', timeout=5) as response:
+            value = json.loads(response.read().decode())
+        if not isinstance(value, dict):
+            raise ValueError('status_not_object')
+        print('ARK_STATUS_PROBE=PASS')
+        break
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        last_error = exc
+        time.sleep(1)
+else:
+    raise SystemExit(f'status_probe_not_ready:{last_error}')
 PY
 
 mkdir -p /var/lib/ark
