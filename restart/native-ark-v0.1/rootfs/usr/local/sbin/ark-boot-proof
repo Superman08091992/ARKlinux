@@ -59,7 +59,7 @@ else:
 PY
 
 
-python - <<'PY' || fail 'real_embedding_probe_failed'
+if ! python - <<'PY'
 import json
 import time
 import urllib.error
@@ -121,6 +121,10 @@ print(
     f"model={model['name']} digest={model['digest']} dimension={embedding['dimension']}"
 )
 PY
+then
+  diagnose_unit arkd.service
+  fail 'real_embedding_probe_failed'
+fi
 
 mkdir -p /var/lib/ark
 cat > /var/lib/ark/boot-proof.json <<EOF
