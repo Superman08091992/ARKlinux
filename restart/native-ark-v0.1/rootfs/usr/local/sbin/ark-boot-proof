@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail(){
+  printf 'ARK_NATIVE_BOOT_PROOF=FAIL detail=%q\n' "$*" >&2
+  exit 1
+}
+
+for mp in / /ark/memory /ark/evidence /ark/state /ark/kj /ark/graveyard /ark/models /ark/checkpoints /ark/quarantine /ark/storage; do
+  mountpoint -q "$mp" || fail "missing_mount:$mp"
+done
+
+[[ -d /ark/runtime ]] || fail 'missing:/ark/runtime'
+[[ -L /opt/ark && "$(readlink /opt/ark)" == /ark ]] || fail 'invalid:/opt/ark_compatibility_symlink'
+
+for unit in ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service; do
+  systemctl is-active --quiet "$unit" || fail "inactive:$unit"
+done
+
+python - <<'PY' || exit 1
+import json, urllib.request
+with urllib.request.urlopen('http://127.0.0.1:8081/status', timeout=5) as r:
+    value=json.loads(r.read().decode())
+if not isinstance(value, dict):
+    raise SystemExit('status_not_object')
+print('ARK_STATUS_PROBE=PASS')
+PY
+
+mkdir -p /var/lib/ark
+cat > /var/lib/ark/boot-proof.json <<EOF
+{"ok":true,"architecture":"native-ark-v0.1","root_subvolume":"@ark","canonical_root":"/ark"}
+EOF
+printf 'ARK_NATIVE_BOOT_PROOF=PASS\n'
