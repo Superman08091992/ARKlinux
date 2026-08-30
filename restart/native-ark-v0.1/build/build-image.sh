@@ -54,7 +54,7 @@ apply_persistent_ark_layout(){
   # deliberately separate from /run/ark, which is volatile and recreated by
   # systemd-tmpfiles at normal boot.
   arch-chroot "$MNT" install -d -m 0755 -o root -g root /ark
-  arch-chroot "$MNT" install -d -m 0770 -o arkd -g ark-state /ark/memory /ark/evidence /ark/state /ark/checkpoints /ark/quarantine /ark/storage /ark/logs
+  arch-chroot "$MNT" install -d -m 0770 -o arkd -g ark-state /ark/memory /ark/evidence /ark/state /ark/checkpoints /ark/quarantine /ark/storage /ark/logs /ark/bus
   arch-chroot "$MNT" install -d -m 0770 -o ark-kj -g ark-state /ark/kj
   arch-chroot "$MNT" install -d -m 0750 -o root -g ark-state /ark/graveyard /ark/models /ark/config
   arch-chroot "$MNT" install -d -m 0770 -o ark-trading -g ark-state /ark/trading
@@ -153,7 +153,7 @@ arch-chroot "$MNT" systemctl set-default graphical.target
 
 stage "validate native A.R.K. contract"
 arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -L /opt/ark && test "$(readlink /opt/ark)" = /ark'
-arch-chroot "$MNT" /bin/bash -lc 'test -d /var/log/ark && test "$(stat -c "%U:%G:%a" /var/log/ark)" = arkd:ark-state:770'
+arch-chroot "$MNT" /bin/bash -lc 'for path in /ark/logs /ark/bus /var/log/ark; do test -d "$path" && test "$(stat -c "%U:%G:%a" "$path")" = arkd:ark-state:770 || exit 1; done'
 arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service'
 arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service'
 
