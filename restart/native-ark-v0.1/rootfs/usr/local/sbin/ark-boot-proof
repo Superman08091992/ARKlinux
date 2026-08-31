@@ -86,7 +86,7 @@ import urllib.request
 
 BASE = "http://127.0.0.1:18080"
 
-def request_json(path, payload=None):
+def request_json(path, payload=None, timeout=30):
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         BASE + path,
@@ -94,7 +94,7 @@ def request_json(path, payload=None):
         headers={"Content-Type": "application/json"} if data is not None else {},
         method="POST" if data is not None else "GET",
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 last_error = None
@@ -117,7 +117,7 @@ record = {
     "verification": {"state": "verified"},
     "provenance": {"source": "qemu-native-boot-proof"},
 }
-sealed = request_json("/graveyard/vector/seal", record)
+sealed = request_json("/graveyard/vector/seal", record, timeout=240)
 embedding = sealed.get("embedding") or {}
 artifact = ((sealed.get("result") or {}).get("derived") or {}).get("embeddings", {}).get("ark-semantic-v1", {})
 vector = artifact.get("vector") or []
@@ -129,6 +129,7 @@ if model.get("name") != "nomic-embed-text:latest" or not model.get("digest"):
 searched = request_json(
     "/graveyard/vector/search",
     {"query": "ARKlinux real nomic embedding proof", "top_k": 1},
+    timeout=240,
 )
 matches = searched.get("matches") or []
 if not matches or matches[0].get("graveyard_id") != record["graveyard_id"]:
