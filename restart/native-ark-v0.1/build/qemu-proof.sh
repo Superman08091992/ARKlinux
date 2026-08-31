@@ -5,8 +5,15 @@ OUTDIR="${2:-$(dirname "$IMAGE_ZST")/qemu-proof}"
 mkdir -p "$OUTDIR"
 RAW="$OUTDIR/arklinux-qemu.raw"
 LOG="$OUTDIR/serial.log"
-rm -f "$RAW" "$LOG"
-zstd -d --sparse "$IMAGE_ZST" -o "$RAW"
+REUSE_RAW="${ARK_QEMU_REUSE_RAW:-0}"
+rm -f "$LOG"
+if [[ "$REUSE_RAW" == "1" ]]; then
+  [[ -f "$RAW" ]] || { echo "ERROR: reusable QEMU raw missing: $RAW" >&2; exit 1; }
+  printf 'Reusing preserved QEMU image: %s\n' "$RAW"
+else
+  rm -f "$RAW"
+  zstd -d --sparse "$IMAGE_ZST" -o "$RAW"
+fi
 
 CODE="$(find /usr/share/edk2 -type f \( -name 'OVMF_CODE.4m.fd' -o -name 'OVMF_CODE.fd' \) | head -1)"
 VARS_SRC="$(find /usr/share/edk2 -type f \( -name 'OVMF_VARS.4m.fd' -o -name 'OVMF_VARS.fd' \) | head -1)"
@@ -49,4 +56,4 @@ fi
 grep 'ARK_STATUS_PROBE=PASS\|ARK_REAL_EMBEDDING_PROBE=PASS\|ARK_NATIVE_BOOT_PROOF=PASS' "$LOG" > "$OUTDIR/proof.txt"
 printf 'qemu_exit=%s\n' "$RC" >> "$OUTDIR/proof.txt"
 printf 'QEMU native boot proof passed.\n'
-rm -f "$RAW"
+[[ "$REUSE_RAW" == "1" ]] || rm -f "$RAW"
