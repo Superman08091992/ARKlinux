@@ -112,9 +112,27 @@ stage "install Arch package set"
 mapfile -t PKGS < <(grep -vE '^\s*(#|$)' "$RELROOT/config/packages.x86_64"); pacstrap -K "$MNT" "${PKGS[@]}"
 
 stage "install ARKlinux rootfs and private A.R.K. overlay"
-cp -a "$RELROOT/rootfs/." "$MNT/"; tar --zstd -xf "$OVERLAY" -C "$MNT"
+# Host checkout ownership must never become guest filesystem ownership.
+cp -a --no-preserve=ownership "$RELROOT/rootfs/." "$MNT/"
+tar --zstd --no-same-owner -xf "$OVERLAY" -C "$MNT"
+chown root:root "$MNT" "$MNT/etc" "$MNT/usr" "$MNT/usr/lib" "$MNT/opt" "$MNT/ark"
+chmod 0755 "$MNT" "$MNT/etc" "$MNT/usr" "$MNT/usr/lib" "$MNT/opt" "$MNT/ark"
 chmod 0755 "$MNT/usr/local/bin/ark-session" "$MNT/usr/local/bin/ark-bootstrap-ai" "$MNT/usr/local/sbin/ark-firstboot" "$MNT/usr/local/sbin/ark-embedding-model" "$MNT/usr/local/sbin/ark-boot-proof" "$MNT/usr/lib/ark-display/adapter.py"
 printf 'ARKlinux\n' > "$MNT/etc/hostname"; printf 'LANG=en_US.UTF-8\n' > "$MNT/etc/locale.conf"; sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' "$MNT/etc/locale.gen"; ln -sf /usr/share/zoneinfo/America/Los_Angeles "$MNT/etc/localtime"
+
+stage "validate root filesystem trust boundary"
+for path in / /etc /usr /usr/lib /opt /ark; do
+  [[ "$(stat -c '%u:%g' "$MNT$path")" == "0:0" ]] || {
+    echo "ERROR: guest system path is not root-owned: $path ($(stat -c '%u:%g' "$MNT$path"))" >&2
+    exit 1
+  }
+done
+[[ "$(stat -c '%a' "$MNT")" == "755" ]] || { echo "ERROR: guest / must have mode 0755" >&2; exit 1; }
+if find "$MNT/etc" "$MNT/usr" "$MNT/opt" "$MNT/ark" -uid 1000 -print -quit | grep -q .; then
+  echo "ERROR: host/operator UID 1000 leaked into guest system paths" >&2
+  find "$MNT/etc" "$MNT/usr" "$MNT/opt" "$MNT/ark" -uid 1000 -print | head -50 >&2
+  exit 1
+fi
 
 stage "generate locale"
 arch-chroot "$MNT" locale-gen
@@ -125,10 +143,22 @@ arch-chroot "$MNT" systemd-sysusers /usr/lib/sysusers.d/ark-native.conf
 stage "apply persistent A.R.K. Btrfs layout"
 apply_persistent_ark_layout
 
-stage "validate volatile tmpfiles contract without creating it"
-# ark-native.conf now contains only /run/ark runtime paths. Validate syntax at
-# image-build time, but do not create volatile state inside the build chroot.
-arch-chroot "$MNT" systemd-tmpfiles --create --dry-run /usr/lib/tmpfiles.d/ark-native.conf
+stage "validate volatile tmpfiles contract transactionally"
+# Create only the A.R.K. volatile tree, verify its exact access contract, then
+# remove it so normal boot must recreate it on tmpfs.
+arch-chroot "$MNT" systemd-tmpfiles --create /usr/lib/tmpfiles.d/ark-native.conf
+arch-chroot "$MNT" /bin/bash -lc '
+  test "$(stat -c "%U:%G:%a" /run/ark)" = root:root:755
+  test "$(stat -c "%U:%G:%a" /run/ark/agents)" = root:root:755
+  test "$(stat -c "%U:%G:%a" /run/ark/agents/kyle)" = root:ark-kyle-ipc:770
+  test "$(stat -c "%U:%G:%a" /run/ark/agents/aletheia)" = root:ark-aletheia-ipc:770
+  test "$(stat -c "%U:%G:%a" /run/ark/agents/joey)" = root:ark-joey-ipc:770
+  test "$(stat -c "%U:%G:%a" /run/ark/agents/hrm)" = root:ark-hrm-ipc:770
+  test "$(stat -c "%U:%G:%a" /run/ark/agents/kenny)" = root:ark-kenny-ipc:770
+  test "$(stat -c "%U:%G:%a" /run/ark/kj)" = ark-kj:ark-kj-ipc:770
+'
+rm -rf "$MNT/run/ark"
+[[ ! -e "$MNT/run/ark" ]] || { echo "ERROR: volatile /run/ark leaked into release image" >&2; exit 1; }
 
 stage "validate compatibility namespace"
 [[ -L "$MNT/opt/ark" ]] || { echo "ERROR: /opt/ark compatibility symlink missing" >&2; exit 1; }
@@ -175,6 +205,7 @@ arch-chroot "$MNT" systemctl enable NetworkManager.service nftables.service chro
 arch-chroot "$MNT" systemctl set-default graphical.target
 
 stage "validate native A.R.K. contract"
+arch-chroot "$MNT" /bin/bash -lc 'test "$(stat -c "%U:%G:%a" /)" = root:root:755 && test "$(stat -c "%U:%G" /etc)" = root:root && test "$(stat -c "%U:%G" /usr)" = root:root && test "$(stat -c "%U:%G" /usr/lib)" = root:root'
 arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -L /opt/ark && test "$(readlink /opt/ark)" = /ark'
 arch-chroot "$MNT" /bin/bash -lc 'for path in /ark/logs /ark/bus /var/log/ark; do test -d "$path" && test "$(stat -c "%U:%G:%a" "$path")" = arkd:ark-state:770 || exit 1; done'
 arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service'
