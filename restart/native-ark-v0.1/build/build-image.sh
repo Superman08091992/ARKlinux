@@ -162,10 +162,10 @@ stage "apply persistent A.R.K. Btrfs layout"
 apply_persistent_ark_layout
 
 stage "validate volatile tmpfiles contract transactionally"
-# Create only the A.R.K. volatile tree, verify its exact access contract, then
-# remove it so normal boot must recreate it on tmpfs.
-arch-chroot "$MNT" systemd-tmpfiles --create /usr/lib/tmpfiles.d/ark-native.conf
-arch-chroot "$MNT" /bin/bash -lc '
+# Use tmpfiles' alternate-root mode so this check cannot bind or alter the
+# build host's live /run. Remove the test tree so boot must recreate it on tmpfs.
+systemd-tmpfiles --root="$MNT" --create ark-native.conf
+chroot "$MNT" /bin/bash -lc '
   test "$(stat -c "%U:%G:%a" /run/ark)" = root:root:755
   test "$(stat -c "%U:%G:%a" /run/ark/agents)" = root:root:755
   test "$(stat -c "%U:%G:%a" /run/ark/agents/kyle)" = root:ark-kyle-ipc:770
