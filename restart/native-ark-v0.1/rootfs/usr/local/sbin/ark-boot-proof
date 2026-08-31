@@ -14,6 +14,13 @@ diagnose_unit(){
   printf 'ARK_NATIVE_UNIT_DIAGNOSTIC_END unit=%s\n' "$unit" >&2
 }
 
+diagnose_runtime_stack(){
+  local unit
+  for unit in systemd-tmpfiles-setup.service ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service; do
+    diagnose_unit "$unit"
+  done
+}
+
 wait_active(){
   local unit="$1"
   local attempt
@@ -24,6 +31,18 @@ wait_active(){
   diagnose_unit "$unit"
   fail "inactive:$unit"
 }
+
+ROOT_CONTRACT="$(stat -c '%U:%G:%a' /)"
+[[ "$ROOT_CONTRACT" == "root:root:755" ]] || {
+  diagnose_unit systemd-tmpfiles-setup.service
+  fail "invalid_root_contract:$ROOT_CONTRACT"
+}
+for runtime_path in /run/ark /run/ark/agents /run/ark/agents/kyle /run/ark/agents/aletheia /run/ark/agents/joey /run/ark/agents/hrm /run/ark/agents/kenny /run/ark/kj; do
+  [[ -d "$runtime_path" ]] || {
+    diagnose_unit systemd-tmpfiles-setup.service
+    fail "missing_volatile_runtime_path:$runtime_path"
+  }
+done
 
 for mp in / /ark/memory /ark/evidence /ark/state /ark/kj /ark/graveyard /ark/models /ark/checkpoints /ark/quarantine /ark/storage; do
   mountpoint -q "$mp" || fail "missing_mount:$mp"
@@ -122,7 +141,7 @@ print(
 )
 PY
 then
-  diagnose_unit arkd.service
+  diagnose_runtime_stack
   fail 'real_embedding_probe_failed'
 fi
 
