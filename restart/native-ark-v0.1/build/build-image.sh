@@ -225,7 +225,7 @@ sync; cleanup; LOOP=""; KPARTX_ACTIVE=0; (cd "$OUT" && sha256sum "$(basename "$I
     arch-chroot "$MNT" chown "$owner:$group" "$mp"
     arch-chroot "$MNT" chmod "$mode" "$mp"
     actual="$(arch-chroot "$MNT" stat -c '%U:%G:%a' "$mp")"
-    expected="$owner:$group:$((8#$mode))"
+    expected="$owner:$group:${mode#0}"
     [[ "$actual" == "$expected" ]] || {
       echo "ERROR: subvolume mount contract mismatch at $mp: expected=$expected actual=$actual" >&2
       return 1
