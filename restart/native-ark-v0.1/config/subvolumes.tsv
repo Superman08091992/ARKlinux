@@ -10,14 +10,14 @@
 
 # /ark is a native top-level ARKlinux system tree inside @ark.
 # These nested subvolumes isolate persistent functional state.
-@memory	/ark/memory	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
-@evidence	/ark/evidence	noatime,compress=zstd:1,nodev,nosuid,noexec	root	root	0750	ark-state
-@state	/ark/state	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
-@kj	/ark/kj	noatime,compress=zstd:1,nodev,nosuid,noexec	root	root	0750	ark-state
-@graveyard	/ark/graveyard	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
-@models	/ark/models	noatime,compress=zstd:3,nodev,nosuid	root	root	0750	ark-state
-@checkpoints	/ark/checkpoints	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
-@quarantine	/ark/quarantine	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
-@storage	/ark/storage	noatime,compress=zstd:3,nodev,nosuid	root	root	0750	ark-state
+@memory	/ark/memory	noatime,compress=zstd:3,nodev,nosuid,noexec	arkd	ark-state	0770	ark-state
+@evidence	/ark/evidence	noatime,compress=zstd:1,nodev,nosuid,noexec	arkd	ark-state	0770	ark-state
+@state	/ark/state	noatime,compress=zstd:3,nodev,nosuid,noexec	arkd	ark-state	0770	ark-state
+@kj	/ark/kj	noatime,compress=zstd:1,nodev,nosuid,noexec	ark-kj	ark-state	0770	ark-state
+@graveyard	/ark/graveyard	noatime,compress=zstd:3,nodev,nosuid,noexec	root	ark-state	0750	ark-state
+@models	/ark/models	noatime,compress=zstd:3,nodev,nosuid	root	ark-state	0750	ark-state
+@checkpoints	/ark/checkpoints	noatime,compress=zstd:3,nodev,nosuid,noexec	arkd	ark-state	0770	ark-state
+@quarantine	/ark/quarantine	noatime,compress=zstd:3,nodev,nosuid,noexec	arkd	ark-state	0770	ark-state
+@storage	/ark/storage	noatime,compress=zstd:3,nodev,nosuid	arkd	ark-state	0770	ark-state
 
 # /run/ark is volatile runtime IPC/state and is intentionally not Btrfs-backed.
