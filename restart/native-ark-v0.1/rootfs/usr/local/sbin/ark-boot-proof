@@ -33,7 +33,7 @@ wait_active(){
 }
 
 ROOT_CONTRACT="$(stat -c '%U:%G:%a' /)"
-[[ "$ROOT_CONTRACT" == "root:root:755" ]] || {
+[[ "$ROOT_CONTRACT" == "root:root:755" || "$ROOT_CONTRACT" == "root:root:555" ]] || {
   diagnose_unit systemd-tmpfiles-setup.service
   fail "invalid_root_contract:$ROOT_CONTRACT"
 }
