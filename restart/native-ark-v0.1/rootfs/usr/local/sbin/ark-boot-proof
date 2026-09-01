@@ -16,7 +16,7 @@ diagnose_unit(){
 
 diagnose_runtime_stack(){
   local unit
-  for unit in systemd-tmpfiles-setup.service ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service; do
+  for unit in systemd-tmpfiles-setup.service ollama.service ark-embedding-model.service ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service; do
     diagnose_unit "$unit"
   done
 }
@@ -97,6 +97,18 @@ def request_json(path, payload=None, timeout=30):
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
+def request_json_retry(path, payload=None, timeout=30, attempts=24, delay=5):
+    last_error = None
+    for _attempt in range(attempts):
+        try:
+            return request_json(path, payload, timeout)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 503:
+                raise
+            last_error = exc
+            time.sleep(delay)
+    raise SystemExit(f"embedding_backend_not_ready:{last_error}")
+
 last_error = None
 for _attempt in range(60):
     try:
@@ -117,7 +129,7 @@ record = {
     "verification": {"state": "verified"},
     "provenance": {"source": "qemu-native-boot-proof"},
 }
-sealed = request_json("/graveyard/vector/seal", record, timeout=240)
+sealed = request_json_retry("/graveyard/vector/seal", record, timeout=240)
 embedding = sealed.get("embedding") or {}
 artifact = ((sealed.get("result") or {}).get("derived") or {}).get("embeddings", {}).get("ark-semantic-v1", {})
 vector = artifact.get("vector") or []
