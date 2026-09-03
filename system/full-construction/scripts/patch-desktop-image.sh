@@ -51,7 +51,7 @@ else
 fi
 
 LOOP="$(losetup --find --show --partscan "$DEST_IMG")"
-mount -o noatime,compress=zstd:3,subvol=@ "${LOOP}p2" "$MNT"
+mount -o noatime,compress=zstd:3,subvol=@ark "${LOOP}p2" "$MNT"
 
 # The image's package database, package cache, /var, /home, /ark state, and
 # other persistent paths live on their own Btrfs subvolumes. Mount the same

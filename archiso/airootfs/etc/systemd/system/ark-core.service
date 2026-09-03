@@ -45,9 +45,9 @@ CapabilityBoundingSet=
 SecureBits=noroot noroot-locked
 
 # Filesystem access
-ReadOnlyPaths=/opt/ark/models /opt/ark/aletheia
-ReadWritePaths=/opt/ark/logs /opt/ark/run /opt/ark/memory /opt/ark/bus
-InaccessiblePaths=/opt/ark/secrets /opt/ark/quarantine
+ReadOnlyPaths=/ark/models /ark/aletheia
+ReadWritePaths=/ark/logs /ark/run /ark/memory /ark/bus
+InaccessiblePaths=/ark/secrets /ark/quarantine
 
 # Bind service to loopback only
 IPAddressDeny=any

@@ -2,16 +2,16 @@
 Description=ARK Learning Controller
 After=ark-core.service
 Wants=ark-core.service
-ConditionPathIsDirectory=/opt/ark
+ConditionPathIsDirectory=/ark
 
 [Service]
 Type=simple
 User=ark
 Group=ark
-WorkingDirectory=/opt/ark
-Environment=ARK_ROOT=/opt/ark
-ExecStartPre=/opt/ark/system/bin/ark-verify-perms
-ExecStart=/opt/ark/system/bin/ark-learning
+WorkingDirectory=/ark
+Environment=ARK_ROOT=/ark
+ExecStartPre=/ark/system/bin/ark-verify-perms
+ExecStart=/ark/system/bin/ark-learning
 Restart=on-failure
 RestartSec=2s
 StartLimitIntervalSec=60
@@ -21,7 +21,7 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/opt/ark/logs /opt/ark/data /opt/ark/agents/id /opt/ark/tmp/sandbox/id /opt/ark/aletheia/immutable
+ReadWritePaths=/ark/logs /ark/data /ark/agents/id /ark/tmp/sandbox/id /ark/aletheia/immutable
 UMask=0077
 
 ProtectKernelTunables=yes

@@ -29,7 +29,7 @@ mkdir -p "$MNT"
 
 LOOP="$(losetup --find --show --partscan "$IMG")"
 
-mount -o noatime,compress=zstd:3,subvol=@ "${LOOP}p2" "$MNT"
+mount -o noatime,compress=zstd:3,subvol=@ark "${LOOP}p2" "$MNT"
 
 while IFS=$'\t' read -r subvol mp opts owner group mode cls; do
   [[ -z "${subvol:-}" || "$subvol" == \#* || "$mp" == "/" ]] && continue
@@ -100,13 +100,13 @@ cat > "$MNT/boot/loader/entries/arklinux.conf" <<EOF
 title ARKlinux
 linux /arklinux-kernel
 initrd /initramfs-arklinux.img
-options root=UUID=$ROOTUUID rootflags=subvol=@ rw quiet audit=1 console=tty0 console=ttyS0,115200n8
+options root=UUID=$ROOTUUID rootflags=subvol=@ark rw quiet audit=1 console=tty0 console=ttyS0,115200n8
 EOF
 cat > "$MNT/boot/loader/entries/arklinux-rescue.conf" <<EOF
 title ARKlinux Rescue
 linux /arklinux-kernel
 initrd /initramfs-arklinux-fallback.img
-options root=UUID=$ROOTUUID rootflags=subvol=@ rw systemd.unit=rescue.target audit=1 console=tty0 console=ttyS0,115200n8
+options root=UUID=$ROOTUUID rootflags=subvol=@ark rw systemd.unit=rescue.target audit=1 console=tty0 console=ttyS0,115200n8
 EOF
 arch-chroot "$MNT" mkinitcpio -p arklinux
 # Basic machine identity and services.

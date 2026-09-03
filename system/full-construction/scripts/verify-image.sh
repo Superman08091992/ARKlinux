@@ -26,7 +26,7 @@ trap cleanup EXIT
 LOOP="$(sudo losetup --read-only --find --show --partscan "$IMG")"
 
 # ARKROOT
-sudo mount -o ro,subvol=@ "${LOOP}p2" "$M"
+sudo mount -o ro,subvol=@ark "${LOOP}p2" "$M"
 
 # ARKESP
 sudo mkdir -p "$M/boot"

@@ -56,7 +56,7 @@
           "additionalProperties": false,
           "required": ["ark_root","secrets_mode","evidence_mode"],
           "properties": {
-            "ark_root": { "type": "string", "const": "/opt/ark" },
+            "ark_root": { "type": "string", "const": "/ark" },
             "secrets_mode": { "type": "string", "const": "0700" },
             "evidence_mode": { "type": "string", "const": "0700" }
           }

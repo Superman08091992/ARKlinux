@@ -49,7 +49,7 @@ root_uuid=$(findmnt -n -o UUID /)
   [[ -f "$EFI_DIR/intel-ucode.img" ]] && echo 'initrd  /EFI/arklinux/intel-ucode.img'
   [[ -f "$EFI_DIR/amd-ucode.img" ]] && echo 'initrd  /EFI/arklinux/amd-ucode.img'
   echo 'initrd  /EFI/arklinux/arklinux-initramfs.img'
-  echo "options root=UUID=${root_uuid} rootflags=subvol=@ rw audit=1 quiet loglevel=3"
+  echo "options root=UUID=${root_uuid} rootflags=subvol=@ark rw audit=1 quiet loglevel=3"
 } > "$ENTRY_DIR/arklinux.conf"
 
 printf 'stage-kernel: staged %s as %s\n' "$kernel_source" "$EFI_DIR/arklinux-kernel"

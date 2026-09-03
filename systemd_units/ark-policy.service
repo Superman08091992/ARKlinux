@@ -2,16 +2,16 @@
 Description=ARK Policy Service
 After=redis.service nftables.service local-fs.target
 Wants=redis.service
-ConditionPathIsDirectory=/opt/ark
+ConditionPathIsDirectory=/ark
 
 [Service]
 Type=simple
 User=ark
 Group=ark
-WorkingDirectory=/opt/ark
-Environment=ARK_ROOT=/opt/ark
-ExecStartPre=/opt/ark/system/bin/ark-verify-perms
-ExecStart=/opt/ark/system/bin/ark-policy
+WorkingDirectory=/ark
+Environment=ARK_ROOT=/ark
+ExecStartPre=/ark/system/bin/ark-verify-perms
+ExecStart=/ark/system/bin/ark-policy
 Restart=on-failure
 RestartSec=2s
 StartLimitIntervalSec=60
@@ -21,7 +21,7 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/opt/ark/logs /opt/ark/data /opt/ark/aletheia/immutable
+ReadWritePaths=/ark/logs /ark/data /ark/aletheia/immutable
 UMask=0077
 
 ProtectKernelTunables=yes

@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-STATE_ROOT     = Path(os.environ.get("ARK_STATE_ROOT", "/opt/ark"))
+STATE_ROOT     = Path(os.environ.get("ARK_STATE_ROOT", "/ark"))
 ALETHEIA_DIR   = STATE_ROOT / "aletheia"
 AUDIT_LOG      = ALETHEIA_DIR / "audit" / "events.log"
 QUARANTINE_DIR = STATE_ROOT / "quarantine"

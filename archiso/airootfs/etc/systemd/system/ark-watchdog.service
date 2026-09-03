@@ -47,8 +47,8 @@ IPAddressDeny=any
 IPAddressAllow=localhost
 
 # Watchdog can read the full aletheia tree
-ReadOnlyPaths=/opt/ark/aletheia /opt/ark/logs /opt/ark/run
-ReadWritePaths=/opt/ark/aletheia/audit
+ReadOnlyPaths=/ark/aletheia /ark/logs /ark/run
+ReadWritePaths=/ark/aletheia/audit
 
 MemoryMax=256M
 CPUQuota=10%

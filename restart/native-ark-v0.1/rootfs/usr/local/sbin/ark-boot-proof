@@ -49,7 +49,7 @@ for mp in / /ark/memory /ark/evidence /ark/state /ark/kj /ark/graveyard /ark/mod
 done
 
 [[ -d /ark/runtime ]] || fail 'missing:/ark/runtime'
-[[ -L /opt/ark && "$(readlink /opt/ark)" == /ark ]] || fail 'invalid:/opt/ark_compatibility_symlink'
+[[ ! -e /opt/ark && ! -L /opt/ark ]] || fail 'obsolete:/opt/ark'
 
 for unit in ollama.service ark-embedding-model.service ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service; do
   wait_active "$unit"
