@@ -152,6 +152,7 @@ def wait_runtime():
     raise RuntimeError(f"runtime_not_ready:{last_error}")
 
 
+wait_runtime()
 emit("ARK_INGESTION_STAGE=AUTHORIZED_EVIDENCE")
 _status, intake_evidence = request_json(
     "/evidence/write",
