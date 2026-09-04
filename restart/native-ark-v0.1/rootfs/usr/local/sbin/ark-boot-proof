@@ -85,6 +85,7 @@ import urllib.error
 import urllib.request
 
 BASE = "http://127.0.0.1:18080"
+print("ARK_REAL_EMBEDDING_STAGE=VECTOR_API_WAIT", flush=True)
 
 def request_json(path, payload=None, timeout=30):
     data = None if payload is None else json.dumps(payload).encode("utf-8")
@@ -112,7 +113,7 @@ def request_json_retry(path, payload=None, timeout=30, attempts=24, delay=5):
 last_error = None
 for _attempt in range(60):
     try:
-        status = request_json("/graveyard/vector/status")
+        status = request_json("/graveyard/vector/status", timeout=5)
         if status.get("ok") is True:
             break
     except (OSError, ValueError, json.JSONDecodeError) as exc:
@@ -120,6 +121,7 @@ for _attempt in range(60):
     time.sleep(1)
 else:
     raise SystemExit(f"runtime_vector_api_not_ready:{last_error}")
+print("ARK_REAL_EMBEDDING_STAGE=VECTOR_API_READY", flush=True)
 
 record = {
     "schema_version": "1.0",
@@ -129,7 +131,9 @@ record = {
     "verification": {"state": "verified"},
     "provenance": {"source": "qemu-native-boot-proof"},
 }
+print("ARK_REAL_EMBEDDING_STAGE=SEAL_REQUEST", flush=True)
 sealed = request_json_retry("/graveyard/vector/seal", record, timeout=240)
+print("ARK_REAL_EMBEDDING_STAGE=SEAL_COMPLETE", flush=True)
 embedding = sealed.get("embedding") or {}
 artifact = ((sealed.get("result") or {}).get("derived") or {}).get("embeddings", {}).get("ark-semantic-v1", {})
 vector = artifact.get("vector") or []
@@ -138,6 +142,7 @@ if embedding.get("dimension") != 768 or len(vector) != 768:
     raise SystemExit("real_embedding_dimension_mismatch")
 if model.get("name") != "nomic-embed-text:latest" or not model.get("digest"):
     raise SystemExit("real_embedding_model_identity_missing")
+print("ARK_REAL_EMBEDDING_STAGE=SEARCH_REQUEST", flush=True)
 searched = request_json(
     "/graveyard/vector/search",
     {"query": "ARKlinux real nomic embedding proof", "top_k": 1},
