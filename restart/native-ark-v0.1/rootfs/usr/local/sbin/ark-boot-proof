@@ -564,8 +564,8 @@ emit("ARK_REAL_EMBEDDING_STAGE=SEAL_REQUEST")
 _status, sealed_response = request_json(
     "/graveyard/vector/seal",
     graveyard_record,
-    timeout=150,
-    attempts=2,
+    timeout=330,
+    attempts=1,
     delay=5,
 )
 emit("ARK_REAL_EMBEDDING_STAGE=SEAL_COMPLETE")
@@ -629,7 +629,7 @@ def emit(value):
     print(value, flush=True)
 
 
-def request_json(path, payload=None, timeout=150, attempts=2):
+def request_json(path, payload=None, timeout=330, attempts=1):
     last = None
     for attempt in range(1, attempts + 1):
         data = None if payload is None else json.dumps(payload).encode("utf-8")
@@ -670,8 +670,8 @@ emit("ARK_REAL_EMBEDDING_STAGE=SEARCH_REQUEST")
 searched = request_json(
     "/graveyard/vector/search",
     {"query": TEXT, "top_k": 1},
-    timeout=150,
-    attempts=2,
+    timeout=330,
+    attempts=1,
 )
 matches = searched.get("matches") or []
 if not matches or matches[0].get("graveyard_id") != GRAVEYARD_ID:
