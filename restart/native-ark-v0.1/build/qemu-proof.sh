@@ -22,7 +22,8 @@ VARS="$OUTDIR/OVMF_VARS.fd"
 cp "$VARS_SRC" "$VARS"
 
 set +e
-setsid timeout 600 qemu-system-x86_64 \
+QEMU_TIMEOUT_SECONDS="${ARK_QEMU_TIMEOUT_SECONDS:-1800}"
+setsid timeout "$QEMU_TIMEOUT_SECONDS" qemu-system-x86_64 \
   -machine q35,accel=tcg \
   -cpu max -smp 2 -m 4096 \
   -drive if=pflash,format=raw,readonly=on,file="$CODE" \
