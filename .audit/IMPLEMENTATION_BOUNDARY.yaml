@@ -1,7 +1,11 @@
-schema_version: 1.0.0
+schema_version: 2.0.0
 canonical_installed_root: /ark
-legacy_roots:
-  - /opt/ark
+root_subvolume: '@ark'
+legacy_root_aliases: false
+runtime_platform_roots:
+  linux: /ark
+  wsl2: /ark
+  windows: '%ProgramData%\ARK'
 arklinux_owns:
   - boot_chain
   - kernel

@@ -13,47 +13,47 @@ locale-gen
 # ── 2. Timezone ───────────────────────────────────────────────────────────────
 ln -sf /usr/share/zoneinfo/UTC /etc/localtime
 
-# ── 3. System user: ark (UID 973, no login shell, no home outside /opt/ark) ───
+# ── 3. System user: ark (UID 973, no login shell, no home outside /ark) ───
 groupadd --system --gid 973 ark 2>/dev/null || true
 useradd  --system \
          --uid 973 \
          --gid ark \
          --no-create-home \
-         --home-dir /opt/ark \
+         --home-dir /ark \
          --shell /usr/bin/nologin \
          --comment "ARK service account" \
          ark 2>/dev/null || true
 
-# ── 4. /opt/ark state-root scaffold & permissions ────────────────────────────
+# ── 4. /ark state-root scaffold & permissions ────────────────────────────
 install -d -m 750 -o ark -g ark \
-  /opt/ark \
-  /opt/ark/models \
-  /opt/ark/ingest \
-  /opt/ark/bus \
-  /opt/ark/memory \
-  /opt/ark/logs \
-  /opt/ark/backup \
-  /opt/ark/apps \
-  /opt/ark/id \
-  /opt/ark/agents \
-  /opt/ark/run
+  /ark \
+  /ark/models \
+  /ark/ingest \
+  /ark/bus \
+  /ark/memory \
+  /ark/logs \
+  /ark/backup \
+  /ark/apps \
+  /ark/id \
+  /ark/agents \
+  /ark/run
 
 install -d -m 700 -o ark -g ark \
-  /opt/ark/secrets \
-  /opt/ark/quarantine
+  /ark/secrets \
+  /ark/quarantine
 
 install -d -m 1777 -o ark -g ark \
-  /opt/ark/snapshots
+  /ark/snapshots
 
 install -d -m 755 -o ark -g ark \
-  /opt/ark/aletheia \
-  /opt/ark/aletheia/audit \
-  /opt/ark/aletheia/manifests
+  /ark/aletheia \
+  /ark/aletheia/audit \
+  /ark/aletheia/manifests
 
 # Make aletheia immutable (chattr +i) after populating initial manifest
 # Note: chattr is filesystem-level; on overlayfs live env it's a no-op,
 # but it protects the installed system post-deployment.
-chattr +i /opt/ark/aletheia/manifests 2>/dev/null || true
+chattr +i /ark/aletheia/manifests 2>/dev/null || true
 
 # ── 5. ARK runtime configuration file ────────────────────────────────────────
 cat > /etc/ark/config.toml << 'TOML'
@@ -63,9 +63,9 @@ cat > /etc/ark/config.toml << 'TOML'
 
 [ark]
 version     = "1.0.1"
-state_root  = "/opt/ark"
+state_root  = "/ark"
 log_level   = "info"
-audit_log   = "/opt/ark/aletheia/audit/events.log"
+audit_log   = "/ark/aletheia/audit/events.log"
 
 [ark.agents]
 core_bin     = "/usr/local/bin/ark-core"
@@ -73,8 +73,8 @@ watchdog_bin = "/usr/local/bin/ark-watchdog"
 
 [ark.security]
 fail_closed     = true
-quarantine_path = "/opt/ark/quarantine"
-manifest_path   = "/opt/ark/aletheia/manifests"
+quarantine_path = "/ark/quarantine"
+manifest_path   = "/ark/aletheia/manifests"
 
 [ark.network]
 bind_addr = "127.0.0.1"
@@ -101,14 +101,14 @@ sed -i "s|@BUILD_ID@|${BUILD_ID}|g" /etc/os-release
 echo "BUILD_TIMESTAMP=${BUILD_ID}" >> /etc/os-release
 
 # ── 9. Stamp initial state manifest (Aletheia genesis record) ─────────────────
-install -m 644 -o ark -g ark /dev/null /opt/ark/aletheia/manifests/state.json
-cat > /opt/ark/aletheia/manifests/state.json << JSON
+install -m 644 -o ark -g ark /dev/null /ark/aletheia/manifests/state.json
+cat > /ark/aletheia/manifests/state.json << JSON
 {
   "version":    "1.0.1",
   "build_id":   "${BUILD_ID}",
   "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "kernel":     "$(uname -r 2>/dev/null || echo unknown)",
-  "state_root": "/opt/ark",
+  "state_root": "/ark",
   "services": [
     "ark-core.service",
     "ark-watchdog.service",
@@ -122,8 +122,8 @@ cat > /opt/ark/aletheia/manifests/state.json << JSON
   "integrity": "genesis"
 }
 JSON
-chown ark:ark /opt/ark/aletheia/manifests/state.json
-chmod 644 /opt/ark/aletheia/manifests/state.json
+chown ark:ark /ark/aletheia/manifests/state.json
+chmod 644 /ark/aletheia/manifests/state.json
 
 # ── 10. Verify critical files are present (build-time smoke test) ─────────────
 echo "[customize_airootfs] Running build-time assertions..."
@@ -143,7 +143,7 @@ assert_present /etc/systemd/system/ark-watchdog.service
 assert_present /etc/systemd/system/ark.target
 assert_present /etc/systemd/system/ark-quarantine.target
 assert_present /etc/nftables.conf
-assert_present /opt/ark/aletheia/manifests/state.json
+assert_present /ark/aletheia/manifests/state.json
 assert_present /etc/ark/config.toml
 
 echo "[customize_airootfs] All assertions passed. Build proceeding."

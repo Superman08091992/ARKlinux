@@ -49,7 +49,15 @@ for mp in / /ark/memory /ark/evidence /ark/state /ark/kj /ark/graveyard /ark/mod
 done
 
 [[ -d /ark/runtime ]] || fail 'missing:/ark/runtime'
-[[ -L /opt/ark && "$(readlink /opt/ark)" == /ark ]] || fail 'invalid:/opt/ark_compatibility_symlink'
+[[ -f /ark/pair_mvp/pipeline.py && -f /ark/pair_mvp/alatheia.py ]] || fail 'missing:pinned_alatheia_runtime'
+[[ -f /etc/ark/ARK_GENESIS_COMMIT && -f /etc/ark/ALATHEIA_COMMIT ]] || fail 'missing:source_provenance'
+[[ ! -e /opt/ark && ! -L /opt/ark ]] || fail 'obsolete:/opt/ark'
+
+ARK_GENESIS_COMMIT="$(tr -d '\r\n' < /etc/ark/ARK_GENESIS_COMMIT)"
+ALATHEIA_COMMIT="$(tr -d '\r\n' < /etc/ark/ALATHEIA_COMMIT)"
+[[ "$ARK_GENESIS_COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail 'invalid:ARK_GENESIS_COMMIT'
+[[ "$ALATHEIA_COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail 'invalid:ALATHEIA_COMMIT'
+printf 'ARK_SOURCE_PROVENANCE_PROBE=PASS ark_genesis=%s alatheia=%s\n' "$ARK_GENESIS_COMMIT" "$ALATHEIA_COMMIT"
 
 for unit in ollama.service ark-embedding-model.service ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service; do
   wait_active "$unit"
@@ -79,14 +87,23 @@ PY
 
 
 if ! python - <<'PY'
+import copy
 import json
+import sys
 import time
 import urllib.error
 import urllib.request
 
 BASE = "http://127.0.0.1:18080"
+TEXT = "ARKlinux complete Alatheia ingestion and real nomic embedding proof"
+SOURCE_REF = "qemu-native-boot-proof:authorized-synthetic-control"
 
-def request_json(path, payload=None, timeout=30):
+
+def emit(value):
+    print(value, flush=True)
+
+
+def request_json(path, payload=None, timeout=30, expected=(200,)):
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         BASE + path,
@@ -94,68 +111,614 @@ def request_json(path, payload=None, timeout=30):
         headers={"Content-Type": "application/json"} if data is not None else {},
         method="POST" if data is not None else "GET",
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
+    status = None
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            status = int(response.status)
+            raw = response.read()
+    except urllib.error.HTTPError as exc:
+        status = int(exc.code)
+        raw = exc.read()
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            f"{path}: invalid JSON status={status} bytes={len(raw)} error={exc}"
+        ) from exc
+    if status not in expected:
+        emit(
+            "ARK_HTTP_REQUEST_FAILURE "
+            f"path={path} status={status} expected={expected} response={value!r}"
+        )
+        raise RuntimeError(f"{path}: unexpected HTTP status {status}")
+    return status, value
 
-def request_json_retry(path, payload=None, timeout=30, attempts=24, delay=5):
+
+def require(condition, detail):
+    if not condition:
+        raise RuntimeError(detail)
+
+
+def wait_runtime():
     last_error = None
-    for _attempt in range(attempts):
+    for _attempt in range(60):
         try:
-            return request_json(path, payload, timeout)
-        except urllib.error.HTTPError as exc:
-            if exc.code != 503:
-                raise
+            _status, value = request_json("/health", timeout=5)
+            if value.get("ok") is True:
+                return
+        except Exception as exc:
             last_error = exc
-            time.sleep(delay)
-    raise SystemExit(f"embedding_backend_not_ready:{last_error}")
+        time.sleep(1)
+    raise RuntimeError(f"runtime_not_ready:{last_error}")
 
-last_error = None
+
+wait_runtime()
+emit("ARK_INGESTION_STAGE=AUTHORIZED_EVIDENCE")
+_status, intake_evidence = request_json(
+    "/evidence/write",
+    {
+        "kind": "native_boot_authorized_intake",
+        "subject_ref": SOURCE_REF,
+        "correlation_id": "corr:qemu-native-ingestion-proof",
+        "payload": {
+            "text": TEXT,
+            "source": "qemu-native-boot-proof",
+            "source_ref": SOURCE_REF,
+            "synthetic_control": True,
+            "consent_scope": ["ingest", "classify", "verify", "local_store"],
+        },
+    },
+)
+intake_evidence_ref = str(intake_evidence.get("evidence_ref") or "")
+require(intake_evidence_ref, "intake_evidence_ref_missing")
+
+emit("ARK_INGESTION_STAGE=KYLE_ACQUISITION")
+_status, kyle = request_json(
+    "/agents/kyle/run",
+    {"raw_input": TEXT, "source": "qemu-native-boot-proof"},
+)
+kyle_result = kyle.get("result") or {}
+kyle_ref = str(kyle_result.get("kyle_ref") or "")
+require(kyle.get("ok") is True and kyle_ref.startswith("kyle:"), "kyle_acquisition_invalid")
+
+emit("ARK_INGESTION_STAGE=QUARANTINE_EXTRACT_DEDUPE")
+_status, submitted = request_json(
+    "/ingestion/submit",
+    {
+        "content": TEXT,
+        "source": "qemu-native-boot-proof",
+        "source_type": "text",
+        "source_ref": SOURCE_REF,
+        "domain": "system",
+        "privacy_scope": "local_only",
+        "retention": "compress",
+        "consent_scope": ["ingest", "classify", "verify", "local_store"],
+        "kyle_ref": kyle_ref,
+        "authority_ref": "operator:native-boot-proof",
+        "evidence_refs": [intake_evidence_ref],
+        "correlation_id": "corr:qemu-native-ingestion-proof",
+        "metadata": {"synthetic_control": True, "purpose": "native-image-acceptance"},
+    },
+    timeout=30,
+    expected=(201,),
+)
+ingestion = submitted.get("ingestion") or {}
+record = ingestion.get("record") or {}
+record_id = str(record.get("record_id") or "")
+expected_preverification = ["raw", "quarantine", "extracted", "deduplicated", "review"]
+actual_preverification = [
+    item.get("to_state") for item in ingestion.get("transitions") or []
+]
+require(record_id.startswith("ingest:"), "ingestion_record_id_invalid")
+require(record.get("state") == "review", "ingestion_did_not_stop_at_review")
+require(actual_preverification == expected_preverification, "ingestion_transition_sequence_invalid")
+require(bool(ingestion.get("units")), "ingestion_extraction_missing")
+require((ingestion.get("integrity") or {}).get("ok") is True, "ingestion_integrity_invalid")
+alatheia_report = ingestion.get("alatheia_report") or {}
+require(
+    any(
+        item.get("stage") == "alatheia" and item.get("ok") is True
+        for item in alatheia_report.get("audit") or []
+        if isinstance(item, dict)
+    ),
+    "pinned_alatheia_report_missing",
+)
+emit(f"ARK_INGESTION_PREVERIFICATION_PROBE=PASS record={record_id}")
+
+emit("ARK_INGESTION_STAGE=DEDUPLICATION_REJECTION")
+_status, duplicate_response = request_json(
+    "/ingestion/submit",
+    {
+        "content": TEXT,
+        "source": "qemu-native-boot-proof",
+        "source_type": "text",
+        "source_ref": SOURCE_REF + ":duplicate",
+        "domain": "system",
+        "privacy_scope": "local_only",
+        "retention": "compress",
+        "consent_scope": ["ingest", "classify", "verify", "local_store"],
+        "kyle_ref": kyle_ref,
+        "authority_ref": "operator:native-boot-proof",
+        "evidence_refs": [intake_evidence_ref],
+        "correlation_id": "corr:qemu-native-ingestion-proof-duplicate",
+        "metadata": {"synthetic_control": True, "purpose": "deduplication-negative-path"},
+    },
+    timeout=30,
+    expected=(201,),
+)
+duplicate = duplicate_response.get("ingestion") or {}
+require((duplicate.get("record") or {}).get("state") == "duplicate", "duplicate_not_rejected")
+require(
+    (duplicate.get("record") or {}).get("duplicate_of") == record_id,
+    "duplicate_lineage_missing",
+)
+emit(f"ARK_INGESTION_DEDUPLICATION_PROBE=PASS duplicate_of={record_id}")
+
+emit("ARK_INGESTION_STAGE=ALATHEIA_UNVERIFIED_REJECTION")
+_status, unverified = request_json(
+    "/agents/aletheia/adjudicate",
+    {
+        "candidate_claim": TEXT,
+        "verification_state": "unverified",
+        "verified_ref": None,
+    },
+    expected=(422,),
+)
+unverified_result = unverified.get("result") or {}
+require(unverified.get("ok") is False, "unverified_alatheia_claim_was_accepted")
+require(unverified_result.get("alatheia_ref") is None, "unverified_alatheia_ref_was_issued")
+emit("ARK_ALATHEIA_REJECTION_PROBE=PASS state=unverified")
+
+untrusted_graveyard = {
+    "schema_version": "1.0",
+    "graveyard_id": "gy:qemu:untrusted:must-fail:v1",
+    "type": "verified_fact",
+    "fact": {"text": TEXT},
+    "verification": {
+        "state": "verified",
+        "verified_packet_ref": "evidence:forged",
+        "alatheia_ref": "alatheia:forged",
+    },
+    "analysis": {"joey_plan_ref": "joey:forged"},
+    "authorization": {"hrm_validation_ref": "hrm:forged"},
+    "provenance": {
+        "source": "qemu-native-boot-proof",
+        "source_ref": SOURCE_REF,
+        "ingestion_record_id": record_id,
+        "content_sha256": record.get("content_sha256"),
+    },
+}
+_status, rejected_seal = request_json(
+    "/graveyard/vector/seal",
+    untrusted_graveyard,
+    timeout=15,
+    expected=(400,),
+)
+require(rejected_seal.get("ok") is False, "untrusted_graveyard_record_was_admitted")
+require(
+    "trusted ingestion state" in str(rejected_seal.get("detail") or ""),
+    "untrusted_graveyard_rejection_reason_missing",
+)
+emit("ARK_GRAVEYARD_REJECTION_PROBE=PASS reason=untrusted_ingestion")
+
+emit("ARK_INGESTION_STAGE=VERIFICATION_EVIDENCE")
+_status, verified_evidence = request_json(
+    "/evidence/write",
+    {
+        "kind": "native_boot_verification_packet",
+        "subject_ref": record_id,
+        "correlation_id": "corr:qemu-native-ingestion-proof",
+        "payload": {
+            "record_id": record_id,
+            "content_sha256": record.get("content_sha256"),
+            "verification_state": "verified",
+            "verification_method": "synthetic-control-digest-and-persistence-check",
+            "source_ref": SOURCE_REF,
+        },
+    },
+)
+verified_packet_ref = str(verified_evidence.get("evidence_ref") or "")
+require(verified_packet_ref, "verified_packet_ref_missing")
+
+emit("ARK_INGESTION_STAGE=ALATHEIA_VERIFICATION")
+_status, alatheia = request_json(
+    "/agents/aletheia/adjudicate",
+    {
+        "candidate_claim": TEXT,
+        "verification_state": "verified",
+        "verified_ref": verified_packet_ref,
+    },
+)
+alatheia_result = alatheia.get("result") or {}
+alatheia_ref = str(
+    alatheia_result.get("alatheia_ref")
+    or alatheia_result.get("aletheia_ref")
+    or ""
+)
+require(
+    alatheia.get("ok") is True and alatheia_ref.startswith(("alatheia:", "aletheia:")),
+    "alatheia_verification_invalid",
+)
+emit(f"ARK_ALATHEIA_VERIFICATION_PROBE=PASS ref={alatheia_ref}")
+
+emit("ARK_INGESTION_STAGE=JOEY_ANALYSIS")
+_status, joey = request_json(
+    "/agents/joey/analyze",
+    {"verified_packet_ref": verified_packet_ref, "statement": TEXT},
+)
+joey_plan_ref = str((joey.get("result") or {}).get("joey_plan_ref") or "")
+require(joey.get("ok") is True and joey_plan_ref.startswith("joey:"), "joey_analysis_invalid")
+
+emit("ARK_INGESTION_STAGE=HRM_VALIDATION")
+_status, hrm = request_json(
+    "/hrm/validate",
+    {
+        "joey_plan_ref": joey_plan_ref,
+        "requested_action": "admit verified synthetic proof record to Graveyard",
+        "evidence_refs": [intake_evidence_ref, verified_packet_ref],
+        "policy_refs": ["authority:v2", "graveyard-admission:v1"],
+        "risk": "low",
+        "cid": "CID-NATIVE-INGESTION-PROOF",
+        "human_approved": True,
+    },
+)
+hrm_result = hrm.get("result") or {}
+hrm_validation_ref = str(
+    hrm_result.get("hrm_validation_ref")
+    or hrm_result.get("hrm_sendoff_ref")
+    or hrm_result.get("hrm_approval_ref")
+    or ""
+)
+require(
+    hrm.get("ok") is True and hrm_validation_ref.startswith("hrm:"),
+    "hrm_validation_invalid",
+)
+
+emit("ARK_INGESTION_STAGE=TRUSTED_PROMOTION")
+_status, promoted_response = request_json(
+    "/ingestion/promote",
+    {
+        "record_id": record_id,
+        "verified_packet_ref": verified_packet_ref,
+        "alatheia_ref": alatheia_ref,
+        "joey_plan_ref": joey_plan_ref,
+        "hrm_validation_ref": hrm_validation_ref,
+        "evidence_refs": [intake_evidence_ref, verified_packet_ref],
+    },
+)
+promoted = promoted_response.get("ingestion") or {}
+expected_complete = [
+    "raw",
+    "quarantine",
+    "extracted",
+    "deduplicated",
+    "review",
+    "verified",
+    "analyzed",
+    "authorized",
+    "trusted",
+]
+require((promoted.get("record") or {}).get("state") == "trusted", "trusted_promotion_failed")
+require(
+    [item.get("to_state") for item in promoted.get("transitions") or []]
+    == expected_complete,
+    "complete_ingestion_transition_sequence_invalid",
+)
+require((promoted.get("integrity") or {}).get("ok") is True, "promoted_ingestion_integrity_invalid")
+emit(f"ARK_INGESTION_PROBE=PASS record={record_id} transitions={len(expected_complete)}")
+
+emit("ARK_INGESTION_STAGE=PERSISTENCE_RESTART")
+request_json("/ingestion/status", timeout=10)
+PY
+then
+  diagnose_runtime_stack
+  fail 'ingestion_and_authority_probe_failed'
+fi
+
+systemctl restart arkd.service || {
+  diagnose_runtime_stack
+  fail 'arkd_restart_after_ingestion_failed'
+}
+wait_active arkd.service
+
+if ! python - <<'PY'
+import copy
+import json
+import time
+import urllib.error
+import urllib.request
+
+BASE = "http://127.0.0.1:18080"
+TEXT = "ARKlinux complete Alatheia ingestion and real nomic embedding proof"
+SOURCE_REF = "qemu-native-boot-proof:authorized-synthetic-control"
+
+
+def emit(value):
+    print(value, flush=True)
+
+
+def request_json(path, payload=None, timeout=30, expected=(200,), attempts=1, delay=3):
+    last = None
+    for attempt in range(1, attempts + 1):
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            BASE + path,
+            data=data,
+            headers={"Content-Type": "application/json"} if data is not None else {},
+            method="POST" if data is not None else "GET",
+        )
+        status = None
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                status = int(response.status)
+                raw = response.read()
+        except urllib.error.HTTPError as exc:
+            status = int(exc.code)
+            raw = exc.read()
+        except OSError as exc:
+            last = exc
+            emit(
+                f"ARK_HTTP_REQUEST_RETRY path={path} attempt={attempt}/{attempts} "
+                f"error={type(exc).__name__}:{exc}"
+            )
+            if attempt < attempts:
+                time.sleep(delay)
+                continue
+            raise
+        try:
+            value = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                f"{path}: invalid JSON status={status} bytes={len(raw)} error={exc}"
+            ) from exc
+        if status in expected:
+            return status, value
+        last = RuntimeError(f"{path}: status={status} response={value!r}")
+        emit(
+            f"ARK_HTTP_REQUEST_RETRY path={path} attempt={attempt}/{attempts} "
+            f"status={status} response={value!r}"
+        )
+        if attempt < attempts:
+            time.sleep(delay)
+    raise last
+
+
+def require(condition, detail):
+    if not condition:
+        raise RuntimeError(detail)
+
+
+last = None
 for _attempt in range(60):
     try:
-        status = request_json("/graveyard/vector/status")
-        if status.get("ok") is True:
+        _status, ingestion_status = request_json("/ingestion/status", timeout=5)
+        if ingestion_status.get("ok") is True and ingestion_status.get("record_count", 0) >= 2:
             break
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        last_error = exc
+    except Exception as exc:
+        last = exc
     time.sleep(1)
 else:
-    raise SystemExit(f"runtime_vector_api_not_ready:{last_error}")
+    raise RuntimeError(f"runtime_after_restart_not_ready:{last}")
 
-record = {
+_status, events = request_json("/bus/events")
+event_list = events.get("events") or []
+trusted_events = [
+    item for item in event_list if item.get("event_type") == "ingestion.trusted"
+]
+require(trusted_events, "trusted_ingestion_event_missing_after_restart")
+record_id = str((trusted_events[-1].get("payload") or {}).get("record_id") or "")
+require(record_id.startswith("ingest:"), "persisted_ingestion_record_id_missing")
+
+_status, readback = request_json(
+    f"/ingestion/record?record_id={record_id}", timeout=10
+)
+record = readback.get("record") or {}
+promotion = readback.get("promotion") or {}
+require(record.get("state") == "trusted", "trusted_ingestion_state_not_persistent")
+require((readback.get("integrity") or {}).get("ok") is True, "ingestion_integrity_failed_after_restart")
+emit(f"ARK_INGESTION_PERSISTENCE_PROBE=PASS record={record_id}")
+
+unverified = {
     "schema_version": "1.0",
-    "graveyard_id": "gy:qemu:nomic-embed-text:768:v1",
+    "graveyard_id": "gy:qemu:unverified:must-fail:v1",
     "type": "verified_fact",
-    "fact": {"text": "ARKlinux real nomic embedding proof"},
-    "verification": {"state": "verified"},
-    "provenance": {"source": "qemu-native-boot-proof"},
+    "fact": {"text": TEXT},
+    "verification": {"state": "unverified"},
+    "analysis": {"joey_plan_ref": promotion.get("joey_plan_ref")},
+    "authorization": {"hrm_validation_ref": promotion.get("hrm_validation_ref")},
+    "provenance": {
+        "source": "qemu-native-boot-proof",
+        "source_ref": SOURCE_REF,
+        "ingestion_record_id": record_id,
+        "content_sha256": record.get("content_sha256"),
+    },
 }
-sealed = request_json_retry("/graveyard/vector/seal", record, timeout=240)
-embedding = sealed.get("embedding") or {}
-artifact = ((sealed.get("result") or {}).get("derived") or {}).get("embeddings", {}).get("ark-semantic-v1", {})
+_status, rejected = request_json(
+    "/graveyard/vector/seal", unverified, timeout=15, expected=(400,)
+)
+require(rejected.get("ok") is False, "unverified_graveyard_record_was_admitted")
+emit("ARK_GRAVEYARD_UNVERIFIED_REJECTION_PROBE=PASS")
+
+graveyard_record = {
+    "schema_version": "1.0",
+    "graveyard_id": "gy:qemu:nomic-embed-text:768:ingestion:v1",
+    "type": "verified_fact",
+    "fact": {"text": TEXT},
+    "verification": {
+        "state": "verified",
+        "verified_packet_ref": promotion.get("verified_packet_ref"),
+        "alatheia_ref": promotion.get("alatheia_ref"),
+    },
+    "analysis": {"joey_plan_ref": promotion.get("joey_plan_ref")},
+    "authorization": {"hrm_validation_ref": promotion.get("hrm_validation_ref")},
+    "provenance": {
+        "source": "qemu-native-boot-proof",
+        "source_ref": SOURCE_REF,
+        "ingestion_record_id": record_id,
+        "content_sha256": record.get("content_sha256"),
+        "transition_tip": (readback.get("transitions") or [{}])[-1].get(
+            "transition_sha256"
+        ),
+    },
+}
+emit("ARK_REAL_EMBEDDING_STAGE=SEAL_REQUEST")
+_status, sealed_response = request_json(
+    "/graveyard/vector/seal",
+    graveyard_record,
+    timeout=330,
+    attempts=1,
+    delay=5,
+)
+emit("ARK_REAL_EMBEDDING_STAGE=SEAL_COMPLETE")
+sealed = sealed_response.get("result") or {}
+embedding = sealed_response.get("embedding") or {}
+artifact = (
+    ((sealed.get("derived") or {}).get("embeddings") or {}).get(
+        "ark-semantic-v1"
+    )
+    or {}
+)
 vector = artifact.get("vector") or []
 model = embedding.get("model") or {}
-if embedding.get("dimension") != 768 or len(vector) != 768:
-    raise SystemExit("real_embedding_dimension_mismatch")
-if model.get("name") != "nomic-embed-text:latest" or not model.get("digest"):
-    raise SystemExit("real_embedding_model_identity_missing")
+require(embedding.get("dimension") == 768 and len(vector) == 768, "real_embedding_dimension_mismatch")
+require(
+    model.get("name") == "nomic-embed-text:latest" and bool(model.get("digest")),
+    "real_embedding_model_identity_missing",
+)
+record_sha256 = str((sealed.get("seal") or {}).get("record_sha256") or "")
+require(record_sha256, "graveyard_record_seal_missing")
+emit(
+    "ARK_GRAVEYARD_ADMISSION_PROBE=PASS "
+    f"graveyard_id={graveyard_record['graveyard_id']} record_sha256={record_sha256}"
+)
+
+tampered = copy.deepcopy(sealed)
+tampered["fact"]["text"] = TEXT + " tampered"
+_status, tamper_result = request_json(
+    "/graveyard/vector/verify",
+    {"record": tampered},
+    timeout=15,
+    expected=(422,),
+)
+require(tamper_result.get("ok") is False, "tampered_graveyard_record_was_accepted")
+require(tamper_result.get("seal_valid") is False, "tampered_record_seal_was_accepted")
+emit("ARK_GRAVEYARD_TAMPER_REJECTION_PROBE=PASS")
+PY
+then
+  diagnose_runtime_stack
+  fail 'graveyard_seal_and_integrity_probe_failed'
+fi
+
+systemctl restart arkd.service || {
+  diagnose_runtime_stack
+  fail 'arkd_restart_after_graveyard_seal_failed'
+}
+wait_active arkd.service
+
+if ! python - <<'PY'
+import json
+import time
+import urllib.error
+import urllib.request
+
+BASE = "http://127.0.0.1:18080"
+TEXT = "ARKlinux complete Alatheia ingestion and real nomic embedding proof"
+GRAVEYARD_ID = "gy:qemu:nomic-embed-text:768:ingestion:v1"
+
+
+def emit(value):
+    print(value, flush=True)
+
+
+def request_json(path, payload=None, timeout=330, attempts=1):
+    last = None
+    for attempt in range(1, attempts + 1):
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            BASE + path,
+            data=data,
+            headers={"Content-Type": "application/json"} if data is not None else {},
+            method="POST" if data is not None else "GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            last = RuntimeError(f"{path}: HTTP {exc.code}: {body}")
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            last = exc
+        emit(
+            f"ARK_HTTP_REQUEST_RETRY path={path} attempt={attempt}/{attempts} "
+            f"error={type(last).__name__}:{last}"
+        )
+        if attempt < attempts:
+            time.sleep(5)
+    raise last
+
+
+for _attempt in range(60):
+    try:
+        health = request_json("/health", timeout=5, attempts=1)
+        if health.get("ok") is True:
+            break
+    except Exception:
+        time.sleep(1)
+else:
+    raise RuntimeError("runtime_after_graveyard_restart_not_ready")
+
+emit("ARK_REAL_EMBEDDING_STAGE=SEARCH_REQUEST")
 searched = request_json(
     "/graveyard/vector/search",
-    {"query": "ARKlinux real nomic embedding proof", "top_k": 1},
-    timeout=240,
+    {"query": TEXT, "top_k": 1},
+    timeout=330,
+    attempts=1,
 )
 matches = searched.get("matches") or []
-if not matches or matches[0].get("graveyard_id") != record["graveyard_id"]:
-    raise SystemExit("real_embedding_search_miss")
+if not matches or matches[0].get("graveyard_id") != GRAVEYARD_ID:
+    raise RuntimeError("real_embedding_search_miss")
 if matches[0].get("association_only") is not True:
-    raise SystemExit("real_embedding_association_boundary_missing")
-print(
+    raise RuntimeError("real_embedding_association_boundary_missing")
+model_name = str(matches[0].get("model") or "")
+model_digest = str(matches[0].get("model_digest") or "")
+dimension = int(matches[0].get("dimension") or 0)
+if model_name != "nomic-embed-text:latest" or not model_digest or dimension != 768:
+    raise RuntimeError("real_embedding_search_identity_invalid")
+emit(
     "ARK_REAL_EMBEDDING_PROBE=PASS "
-    f"model={model['name']} digest={model['digest']} dimension={embedding['dimension']}"
+    f"model={model_name} digest={model_digest} dimension={dimension}"
+)
+
+events = request_json("/bus/events", timeout=15, attempts=1).get("events") or []
+required_events = {
+    "ingestion.persisted",
+    "agent.kyle.completed",
+    "agent.aletheia.completed",
+    "agent.joey.completed",
+    "hrm.validation.completed",
+    "ingestion.trusted",
+    "evidence.written",
+}
+present = {str(item.get("event_type") or "") for item in events}
+missing = sorted(required_events - present)
+if missing:
+    raise RuntimeError(f"evidence_continuity_events_missing:{missing}")
+
+outcomes = request_json("/outcomes", timeout=15, attempts=1)
+if outcomes.get("chain_valid") is not True:
+    raise RuntimeError(
+        f"outcome_chain_invalid:{outcomes.get('chain_errors') or []}"
+    )
+if int(outcomes.get("record_count") or 0) < 1:
+    raise RuntimeError("outcome_ledger_empty")
+emit(
+    "ARK_EVIDENCE_CONTINUITY_PROBE=PASS "
+    f"events={len(events)} outcomes={outcomes.get('record_count')}"
 )
 PY
 then
   diagnose_runtime_stack
-  fail 'real_embedding_probe_failed'
+  fail 'embedding_search_and_evidence_continuity_probe_failed'
 fi
 
 mkdir -p /var/lib/ark

@@ -4,7 +4,6 @@
 set -euo pipefail
 
 readonly ARK_ROOT="${ARK_ROOT:-/ark}"
-readonly LEGACY_ROOT="/opt/ark"
 readonly -a FACETS=(
   existence location ownership purpose startup access dependencies
   state changes authority stop restore
@@ -55,23 +54,5 @@ link_if_absent "state/id" "$ARK_ROOT/id"
 link_if_absent "existence/aletheia" "$ARK_ROOT/aletheia"
 link_if_absent "../../changes/audit" "$ARK_ROOT/existence/aletheia/audit"
 link_if_absent "../../authority/manifests" "$ARK_ROOT/existence/aletheia/manifests"
-
-# Preserve the existing genesis manifest as migration input when present.
-if [[ -f "$LEGACY_ROOT/aletheia/manifests/state.json" && \
-      ! -f "$ARK_ROOT/authority/manifests/state.json" ]]; then
-  cp -a "$LEGACY_ROOT/aletheia/manifests/state.json" \
-    "$ARK_ROOT/authority/manifests/state.json"
-  chown ark:ark "$ARK_ROOT/authority/manifests/state.json"
-fi
-
-# New images expose the old path only as a compatibility projection. Existing
-# directories are left untouched for an explicit, evidence-backed migration.
-if [[ ! -e "$LEGACY_ROOT" && ! -L "$LEGACY_ROOT" ]]; then
-  install -d -m 0755 /opt
-  ln -s /ark "$LEGACY_ROOT"
-elif [[ -d "$LEGACY_ROOT" && ! -L "$LEGACY_ROOT" ]]; then
-  printf 'ark-layout-init: legacy directory retained pending migration: %s\n' \
-    "$LEGACY_ROOT" >&2
-fi
 
 printf 'ark-layout-init: canonical namespace ready at %s\n' "$ARK_ROOT"

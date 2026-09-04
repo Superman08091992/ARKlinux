@@ -1,7 +1,7 @@
 # service	role	user	group	target	state_path
-ark-runtime-api.service	ark-runtime	ark	ark	ark.target	/opt/ark/state
-ark-local-api.service	status-api	ark	ark	manual	/opt/ark/state
-ark-trading.service	trading	ark	ark	manual	/opt/ark/evidence
+ark-runtime-api.service	ark-runtime	ark	ark	ark.target	/ark/state
+ark-local-api.service	status-api	ark	ark	manual	/ark/state
+ark-trading.service	trading	ark	ark	manual	/ark/evidence
 ark-hardwared.service	hardwared	ark-hardwared	ark-io	ark.target	/run/ark/hardware.json
 
 # Kyle, Aletheia, Joey, HRM, and Kenny are canonical A.R.K. runtime roles provided

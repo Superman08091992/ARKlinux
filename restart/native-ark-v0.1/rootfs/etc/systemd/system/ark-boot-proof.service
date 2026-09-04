@@ -7,10 +7,13 @@ ConditionPathExists=!/var/lib/ark/boot-proof.json
 
 [Service]
 Type=oneshot
+TimeoutStartSec=40min
 ExecStart=/usr/local/sbin/ark-boot-proof
+ExecStopPost=/usr/bin/bash -c 'if [[ "$SERVICE_RESULT" != success ]]; then printf "ARK_NATIVE_BOOT_PROOF=FAIL detail=service_result:%%s:exit_code:%%s:exit_status:%%s\\n" "$SERVICE_RESULT" "$EXIT_CODE" "$EXIT_STATUS"; fi'
 StandardOutput=journal+console
 StandardError=journal+console
 RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
+

@@ -74,7 +74,7 @@ install_private_packages(){
   [[ -f "$MNT/usr/lib/systemd/system/ark-runtime-api.service" ]] || { echo "ERROR: ark-runtime-api.service not installed" >&2; exit 1; }
   [[ -f "$MNT/usr/lib/systemd/system/ark-local-api.service" ]] || { echo "ERROR: ark-local-api.service not installed" >&2; exit 1; }
   [[ -f "$MNT/usr/lib/systemd/system/ark-trading.service" ]] || { echo "ERROR: ark-trading.service not installed" >&2; exit 1; }
-  [[ -d "$MNT/opt/ark/runtime" ]] || { echo "ERROR: /opt/ark/runtime not installed" >&2; exit 1; }
+  [[ -d "$MNT/ark/runtime" ]] || { echo "ERROR: /ark/runtime not installed" >&2; exit 1; }
 
   install -d -m0750 "$MNT/etc/ark"
   printf '%s\n' "$ARK_GENESIS_COMMIT" > "$MNT/etc/ark/ARK_GENESIS_COMMIT"
@@ -103,7 +103,7 @@ done < "$ROOT/config/subvolumes.tsv"
 umount "$MNT"
 
 # Mount root first, then every declared mutable/state subvolume in file order.
-mount -o noatime,compress=zstd:3,subvol=@ "${LOOP}p2" "$MNT"
+mount -o noatime,compress=zstd:3,subvol=@ark "${LOOP}p2" "$MNT"
 while IFS=$'\t' read -r subvol mp opts owner group mode cls; do
   [[ -z "${subvol:-}" || "$subvol" == \#* || "$mp" == "/" ]] && continue
   mkdir -p "$MNT$mp"
@@ -188,13 +188,13 @@ cat > "$MNT/boot/loader/entries/arklinux.conf" <<EOF
 title ARKlinux
 linux /arklinux-kernel
 initrd /initramfs-arklinux.img
-options root=UUID=$ROOTUUID rootflags=subvol=@ rw quiet audit=1 console=tty0 console=ttyS0,115200n8
+options root=UUID=$ROOTUUID rootflags=subvol=@ark rw quiet audit=1 console=tty0 console=ttyS0,115200n8
 EOF
 cat > "$MNT/boot/loader/entries/arklinux-rescue.conf" <<EOF
 title ARKlinux Rescue
 linux /arklinux-kernel
 initrd /initramfs-arklinux-fallback.img
-options root=UUID=$ROOTUUID rootflags=subvol=@ rw systemd.unit=rescue.target audit=1 console=tty0 console=ttyS0,115200n8
+options root=UUID=$ROOTUUID rootflags=subvol=@ark rw systemd.unit=rescue.target audit=1 console=tty0 console=ttyS0,115200n8
 EOF
 arch-chroot "$MNT" mkinitcpio -p arklinux
 
@@ -234,7 +234,7 @@ findmnt -R "$MNT" > "$OUT/evidence/mount-tree.txt"
 arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /etc/systemd/system/ark*.service /etc/systemd/system/ark*.target /usr/lib/systemd/system/ark*.service'
 
 if [[ "$ARK_INTEGRATED" == "1" ]]; then
-  arch-chroot "$MNT" /bin/bash -lc 'test -d /opt/ark/runtime && test -f /etc/ark/ARK_GENESIS_COMMIT && ! test -e /ark'
+  arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -f /etc/ark/ARK_GENESIS_COMMIT && ! test -e /opt/ark && ! test -L /opt/ark'
 fi
 
 sync

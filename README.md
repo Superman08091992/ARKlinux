@@ -46,7 +46,7 @@ Boot the ISO, then:
 ark-install /dev/sdX --confirm
 ```
 
-Creates BTRFS subvolumes `@` `@home` `@log` `@snapshots` `@opt_ark`,
+Creates BTRFS subvolumes `@ark` `@home` `@log` `@snapshots`,
 installs **systemd-boot**, and generates `/etc/fstab`.
 
 ---
@@ -60,7 +60,7 @@ installs **systemd-boot**, and generates `/etc/fstab`.
 │  │  nftables — default-deny, loopback-only                         ││
 │  └─────────────────────────────────────────────────────────────────┘│
 │  ┌─────────────────────────────────────────────────────────────────┐│
-│  │  /opt/ark (canonical state root, ark:ark 750)                   ││
+│  │  /ark (canonical A.R.K. root, ark:ark 750)                      ││
 │  │  ├── models/    ingest/    bus/    memory/                      ││
 │  │  ├── logs/      agents/     run/    backup/                     ││
 │  │  ├── secrets/   id/        quarantine/ (700)                    ││

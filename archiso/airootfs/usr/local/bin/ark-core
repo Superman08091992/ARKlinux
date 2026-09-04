@@ -2,7 +2,7 @@
 """
 ark-core — ARKLinux Core Agent
 Runs as non-root 'ark' user. Maintains state manifest, emits heartbeat.
-All filesystem writes are restricted to /opt/ark/logs and /opt/ark/run.
+All filesystem writes are restricted to /ark/logs and /ark/run.
 """
 import json
 import logging
@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-STATE_ROOT   = Path(os.environ.get("ARK_STATE_ROOT", "/opt/ark"))
+STATE_ROOT   = Path(os.environ.get("ARK_STATE_ROOT", "/ark"))
 LOG_PATH     = STATE_ROOT / "logs" / "core.log"
 RUN_PATH     = STATE_ROOT / "run"
 MANIFEST_DIR = STATE_ROOT / "aletheia" / "manifests"

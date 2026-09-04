@@ -178,9 +178,11 @@ chroot "$MNT" /bin/bash -lc '
 rm -rf "$MNT/run/ark"
 [[ ! -e "$MNT/run/ark" ]] || { echo "ERROR: volatile /run/ark leaked into release image" >&2; exit 1; }
 
-stage "validate compatibility namespace"
-[[ -L "$MNT/opt/ark" ]] || { echo "ERROR: /opt/ark compatibility symlink missing" >&2; exit 1; }
-[[ "$(readlink "$MNT/opt/ark")" == "/ark" ]] || { echo "ERROR: /opt/ark must resolve to /ark" >&2; exit 1; }
+stage "validate forward-only namespace"
+[[ ! -e "$MNT/opt/ark" && ! -L "$MNT/opt/ark" ]] || {
+  echo "ERROR: obsolete /opt/ark path present in new image" >&2
+  exit 1
+}
 
 stage "create operator account"
 arch-chroot "$MNT" useradd -m -G wheel,audio,video,input,storage -s /bin/bash operator || true
@@ -224,13 +226,14 @@ arch-chroot "$MNT" systemctl set-default graphical.target
 
 stage "validate native A.R.K. contract"
 arch-chroot "$MNT" /bin/bash -lc 'test "$(stat -c "%U:%G:%a" /)" = root:root:755 && test "$(stat -c "%U:%G" /etc)" = root:root && test "$(stat -c "%U:%G" /usr)" = root:root && test "$(stat -c "%U:%G" /usr/lib)" = root:root'
-arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -L /opt/ark && test "$(readlink /opt/ark)" = /ark'
+arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -f /ark/pair_mvp/pipeline.py && test -f /ark/pair_mvp/alatheia.py && test -f /etc/ark/ARK_GENESIS_COMMIT && test -f /etc/ark/ALATHEIA_COMMIT && ! test -e /opt/ark && ! test -L /opt/ark'
 arch-chroot "$MNT" /bin/bash -lc 'for path in /ark/logs /ark/bus /var/log/ark; do test -d "$path" && test "$(stat -c "%U:%G:%a" "$path")" = arkd:ark-state:770 || exit 1; done'
 arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service'
 arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service'
 
 stage "collect image evidence"
-mkdir -p "$OUT/evidence"; cp "$RELROOT/config/subvolumes.tsv" "$OUT/evidence/subvolumes.tsv"; cp "$RELROOT/config/packages.x86_64" "$OUT/evidence/packages.requested"; cp "$RELROOT/config/dependencies.md" "$OUT/evidence/dependencies.md"; cp "$MNT/etc/fstab" "$OUT/evidence/fstab"; pacman --root "$MNT" --config /etc/pacman.conf -Q > "$OUT/evidence/packages.installed"; btrfs subvolume list "$MNT" > "$OUT/evidence/btrfs-subvolumes.txt"; findmnt -R "$MNT" > "$OUT/evidence/mount-tree.txt"; cp "$MNT/etc/ark/ARK_GENESIS_COMMIT" "$OUT/evidence/ARK_GENESIS_COMMIT"
+mkdir -p "$OUT/evidence"; cp "$RELROOT/config/subvolumes.tsv" "$OUT/evidence/subvolumes.tsv"; cp "$RELROOT/config/packages.x86_64" "$OUT/evidence/packages.requested"; cp "$RELROOT/config/dependencies.md" "$OUT/evidence/dependencies.md"; cp "$MNT/etc/fstab" "$OUT/evidence/fstab"; pacman --root "$MNT" --config /etc/pacman.conf -Q > "$OUT/evidence/packages.installed"; btrfs subvolume list "$MNT" > "$OUT/evidence/btrfs-subvolumes.txt"; findmnt -R "$MNT" > "$OUT/evidence/mount-tree.txt"; cp "$MNT/etc/ark/ARK_GENESIS_COMMIT" "$OUT/evidence/ARK_GENESIS_COMMIT"; cp "$MNT/etc/ark/ALATHEIA_COMMIT" "$OUT/evidence/ALATHEIA_COMMIT"; sha256sum "$OVERLAY" > "$OUT/evidence/ARK_RUNTIME_OVERLAY_SHA256"
 
 stage "finalize and compress image"
 sync; cleanup; LOOP=""; KPARTX_ACTIVE=0; (cd "$OUT" && sha256sum "$(basename "$IMG")" > RAW-SHA256SUMS); zstd -19 -T0 --rm "$IMG" -o "$COMPRESSED"; (cd "$OUT" && sha256sum "$(basename "$COMPRESSED")" > SHA256SUMS); printf 'ARKlinux native release image: %s\n' "$COMPRESSED"
+

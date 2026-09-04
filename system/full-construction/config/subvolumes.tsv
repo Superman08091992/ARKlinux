@@ -1,5 +1,5 @@
 # subvolume	mountpoint	options	owner	group	mode	class
-@	/	noatime,compress=zstd:3	root	root	0755	os
+@ark	/	noatime,compress=zstd:3	root	root	0755	os
 @home	/home	noatime,compress=zstd:3,nodev,nosuid	root	root	0755	os
 @root	/root	noatime,compress=zstd:3,nodev,nosuid	root	root	0700	os
 @var	/var	noatime,compress=zstd:3,nodev,nosuid	root	root	0755	os
@@ -8,22 +8,22 @@
 @swap	/swap	noatime	root	root	0700	os
 @snapshots	/.snapshots	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0700	os
 
-# A.R.K. package-owned code stays on the root filesystem under /opt/ark.
+# A.R.K. package-owned code stays on the root filesystem under /ark.
 # Only mutable state is split into dedicated Btrfs subvolumes, so package
-# installation can never be hidden by a mount at /opt/ark/runtime or /opt/ark/graveyard.
-@ark-bus	/opt/ark/bus	noatime,compress=zstd:1,nodev,nosuid,noexec	root	root	0750	ark-state
-@ark-evidence	/opt/ark/evidence	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
-@ark-memory	/opt/ark/memory	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
-@ark-state	/opt/ark/state	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
-@ark-checkpoints	/opt/ark/checkpoints	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
-@ark-quarantine	/opt/ark/quarantine	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
-@ark-models	/opt/ark/models	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
-@ark-storage	/opt/ark/storage	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
-@ark-artifacts	/opt/ark/artifacts	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
-@ark-datasets	/opt/ark/datasets	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+# installation can never be hidden by a mount at /ark/runtime or /ark/graveyard.
+@ark-bus	/ark/bus	noatime,compress=zstd:1,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-evidence	/ark/evidence	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-memory	/ark/memory	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-state	/ark/state	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-checkpoints	/ark/checkpoints	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-quarantine	/ark/quarantine	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-models	/ark/models	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-storage	/ark/storage	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-artifacts	/ark/artifacts	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
+@ark-datasets	/ark/datasets	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
 @ark-varlib	/var/lib/ark	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0750	ark-state
 @ark-backups	/var/lib/ark/backups	noatime,compress=zstd:3,nodev,nosuid,noexec	root	root	0700	ark-state
 
 # /run/ark is volatile and is created by systemd tmpfiles at boot.
 # /etc/ark is configuration and stays on the root filesystem.
-# /ark and /opt/ARK are legacy migration inputs only and are intentionally not mounted.
+# New images use /ark directly and intentionally create no legacy root alias.

@@ -24,7 +24,7 @@ mountpoints = [row[1] for row in subvolumes]
 assert len(subs) == len(set(subs)), "duplicate subvolume"
 assert len(mountpoints) == len(set(mountpoints)), "duplicate mountpoint"
 
-required_os = {"@", "@home", "@root", "@var", "@log", "@pkg", "@swap", "@snapshots"}
+required_os = {"@ark", "@home", "@root", "@var", "@log", "@pkg", "@swap", "@snapshots"}
 assert required_os <= set(subs)
 
 required_ark_state = {
@@ -44,20 +44,20 @@ required_ark_state = {
 assert required_ark_state <= set(subs)
 
 for path in mountpoints:
-    assert not path.startswith("/ark"), f"legacy /ark mount remains authoritative: {path}"
     assert not path.startswith("/opt/ARK"), f"case-drift mount remains: {path}"
+    assert not path.startswith("/opt/ark"), f"obsolete root mount remains: {path}"
 
 # Package-owned code must never be hidden behind state subvolumes.
-for forbidden in ("/opt/ark/runtime", "/opt/ark/graveyard", "/opt/ark/ui", "/opt/ark/docs"):
+for forbidden in ("/ark/runtime", "/ark/graveyard", "/ark/ui", "/ark/docs"):
     assert forbidden not in mountpoints, f"package-owned code hidden by mount: {forbidden}"
 
 for required in (
-    "/opt/ark/bus",
-    "/opt/ark/evidence",
-    "/opt/ark/memory",
-    "/opt/ark/state",
-    "/opt/ark/checkpoints",
-    "/opt/ark/quarantine",
+    "/ark/bus",
+    "/ark/evidence",
+    "/ark/memory",
+    "/ark/state",
+    "/ark/checkpoints",
+    "/ark/quarantine",
     "/var/lib/ark",
 ):
     assert required in mountpoints
@@ -75,6 +75,6 @@ match = re.search(r"^ARK_GENESIS_COMMIT=([0-9a-f]{40})$", lock, re.MULTILINE)
 assert match, "ARK_GENESIS_COMMIT must pin one exact 40-hex commit"
 assert match.group(1) != "0" * 40
 assert 'ARK_GENESIS_PACKAGES="ark-runtime ark-services ark-ui"' in lock
-assert "ARK_RUNTIME_ROOT=/opt/ark" in lock
+assert "ARK_RUNTIME_ROOT=/ark" in lock
 
 print(f"{len(subvolumes)} subvolumes; {len(processes)} truthful process definitions; A.R.K. pinned to {match.group(1)}: PASS")

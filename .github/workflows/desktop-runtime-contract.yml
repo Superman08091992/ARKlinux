@@ -43,7 +43,7 @@ jobs:
           LOCK=system/full-construction/config/ark-genesis.lock
           test -s "$LOCK"
           grep -Eq '^ARK_GENESIS_COMMIT=[0-9a-f]{40}$' "$LOCK"
-          grep -q '^ARK_RUNTIME_ROOT=/opt/ark$' "$LOCK"
+          grep -q '^ARK_RUNTIME_ROOT=/ark$' "$LOCK"
           grep -q '^ARK_GENESIS_REPOSITORY=Superman08091992/ARK_GENESIS$' "$LOCK"
           grep -q '^ARK_GENESIS_PACKAGES="ark-runtime ark-services ark-ui"$' "$LOCK"
           python - <<'PY'
@@ -55,8 +55,8 @@ jobs:
               Path('system/full-construction/rootfs/etc/systemd'),
               Path('system/full-construction/rootfs/usr/lib/ark-desktop'),
           ]
-          # `/opt/ark/...` is canonical and must not be mistaken for legacy `/ark/...`.
-          legacy = re.compile(r'(?<!/opt)/ark/(?:processes|runtime)|ark-(?:kyle|joey|hrm|kenny)\.service')
+          # `/ark/...` is canonical; `/opt/ark/...` is obsolete on new images.
+          legacy = re.compile(r'/opt/ark/|ark-(?:kyle|joey|hrm|kenny)\.service')
           violations = []
           for root in roots:
               for path in root.rglob('*'):

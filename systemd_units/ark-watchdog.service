@@ -6,14 +6,14 @@ After=ark-core.service
 Type=simple
 User=ark
 Group=ark
-ExecStart=/usr/bin/python /opt/ark/agents/watchdog.py
+ExecStart=/usr/bin/python /ark/agents/watchdog.py
 Restart=always
 RestartSec=10s
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
-ReadOnlyPaths=/opt/ark/memory /opt/ark/logs
-ReadWritePaths=/opt/ark/run
+ReadOnlyPaths=/ark/memory /ark/logs
+ReadWritePaths=/ark/run
 
 [Install]
 WantedBy=ark.target

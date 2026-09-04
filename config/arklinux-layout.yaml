@@ -1,7 +1,5 @@
-schema_version: 1.0.0
+schema_version: 2.0.0
 canonical_root: /ark
-legacy_roots:
-  - /opt/ark
 root_subvolume: '@ark'
 facet_subvolumes:
   existence: '@existence'
@@ -23,6 +21,9 @@ kernel:
   upstream_compatible_sources:
     - /boot/vmlinuz-linux-ark
     - /boot/vmlinuz-linux
+portable_runtime:
+  linux_root: /ark
+  wsl2_root: /ark
+  windows_root: '%ProgramData%\ARK'
 compatibility:
-  opt_ark_symlink_target: /ark
-  opt_ark_is_authoritative: false
+  legacy_root_aliases: false

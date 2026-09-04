@@ -134,6 +134,6 @@ These are architecture components rather than third-party packages:
 - Btrfs `@ark` is mounted at `/`.
 - `/ark` is a native top-level ARKlinux system hierarchy.
 - `/run/ark` is volatile IPC/runtime state.
-- `/opt/ark` is not a second canonical state root.
+- No legacy installed-root alias is created on new images.
 - KJ is not the event ledger and not the display adapter.
 - The GUI does not connect directly to low-level agent sockets or KJ.

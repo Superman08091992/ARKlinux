@@ -5,7 +5,7 @@
 #
 # Creates BTRFS layout:
 #   ESP (512 MiB, FAT32)    → /boot/efi
-#   root (remainder, BTRFS) → subvolumes: @  @home  @log  @snapshots  @opt_ark
+#   root (remainder, BTRFS) → subvolumes: @ark  @home  @log  @snapshots
 #
 # Installs systemd-boot as bootloader.
 # Generates /etc/fstab via genfstab.
@@ -14,7 +14,7 @@ set -euo pipefail
 IFS=$'\n\t'
 
 # ── Constants ────────────────────────────────────────────────────────────────
-readonly SCRIPT_VERSION="1.0.1"
+readonly SCRIPT_VERSION="1.1.0"
 readonly MOUNT_ROOT="/mnt/arkinstall"
 LOG_FILE=""
 LOG_FILE="/tmp/ark-install-$(date +%s).log"
@@ -126,7 +126,7 @@ log "Step 3/8: Creating BTRFS subvolumes"
 mkdir -p "$MOUNT_ROOT"
 mount "$PART_ROOT" "$MOUNT_ROOT" >> "$LOG_FILE" 2>&1
 
-for sv in @ @home @log @snapshots @opt_ark; do
+for sv in @ark @home @log @snapshots; do
   btrfs subvolume create "${MOUNT_ROOT}/${sv}" >> "$LOG_FILE" 2>&1
   log "  Created: $sv"
 done
@@ -134,11 +134,10 @@ umount "$MOUNT_ROOT"
 
 # ── Step 4: Mount subvolumes ──────────────────────────────────────────────────
 log "Step 4/8: Mounting subvolumes"
-mount -o "subvol=@,${BTRFS_OPTS}" "$PART_ROOT" "$MOUNT_ROOT"
-mkdir -p "${MOUNT_ROOT}"/{home,var/log,opt/ark,.snapshots,boot/efi}
+mount -o "subvol=@ark,${BTRFS_OPTS}" "$PART_ROOT" "$MOUNT_ROOT"
+mkdir -p "${MOUNT_ROOT}"/{home,var/log,ark,.snapshots,boot/efi}
 mount -o "subvol=@home,${BTRFS_OPTS}"       "$PART_ROOT" "${MOUNT_ROOT}/home"
 mount -o "subvol=@log,${BTRFS_OPTS}"        "$PART_ROOT" "${MOUNT_ROOT}/var/log"
-mount -o "subvol=@opt_ark,${BTRFS_OPTS}"    "$PART_ROOT" "${MOUNT_ROOT}/opt/ark"
 mount -o "subvol=@snapshots,${BTRFS_OPTS}"  "$PART_ROOT" "${MOUNT_ROOT}/.snapshots"
 mount "$PART_ESP" "${MOUNT_ROOT}/boot/efi"
 log "  Subvolumes mounted at $MOUNT_ROOT"
@@ -195,7 +194,7 @@ linux   /EFI/arklinux/vmlinuz-linux
 initrd  /EFI/arklinux/intel-ucode.img
 initrd  /EFI/arklinux/amd-ucode.img
 initrd  /EFI/arklinux/initramfs-linux.img
-options root=UUID=${ROOT_UUID} rootflags=subvol=@ rw audit=1 quiet loglevel=3
+options root=UUID=${ROOT_UUID} rootflags=subvol=@ark rw audit=1 quiet loglevel=3
 ENTRY
 
 log "  systemd-boot installed, entry: $ENTRIES_DIR/arklinux.conf"
@@ -219,7 +218,7 @@ log "━━━━━━━━━━━━━━━━━━━━━━━━━
 log " Disk:        $TARGET_DISK"
 log " ESP:         $PART_ESP"
 log " Root:        $PART_ROOT (UUID: $ROOT_UUID)"
-log " Subvolumes:  @ @home @log @snapshots @opt_ark"
+log " Subvolumes:  @ark @home @log @snapshots"
 log " Bootloader:  systemd-boot"
 log " Log file:    $LOG_FILE"
 log ""
