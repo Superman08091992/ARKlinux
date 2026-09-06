@@ -23,12 +23,15 @@ fi
 
 readonly ROOT_DEVICE="$1"
 readonly ESP_DEVICE="$2"
-readonly RELROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RELROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly RELROOT
 readonly OVERLAY="$RELROOT/rootfs"
-readonly WORK="$(mktemp -d /var/tmp/ark-display-repair.XXXXXX)"
+WORK="$(mktemp -d /var/tmp/ark-display-repair.XXXXXX)"
+readonly WORK
 readonly TOP="$WORK/top"
 readonly TARGET="$WORK/root"
-readonly STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+readonly STAMP
 
 mounted=()
 TARGET_DISK=""
