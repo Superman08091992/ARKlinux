@@ -84,8 +84,9 @@ fi
 readonly AI_PYTHON="$ACTIVE_VENV/bin/python"
 
 remove_venv_packages(){
+  local package_output
   local -a present=()
-  mapfile -t present < <(
+  package_output="$(
     "$AI_PYTHON" - "$@" <<'PY'
 from importlib import metadata
 import sys
@@ -97,7 +98,13 @@ for package in sys.argv[1:]:
         continue
     print(package)
 PY
-  )
+  )" || {
+    printf 'ERROR: could not inspect the existing AI environment\n' >&2
+    return 1
+  }
+  if [[ -n "$package_output" ]]; then
+    mapfile -t present <<<"$package_output"
+  fi
   if (( ${#present[@]} )); then
     printf 'Removing Python packages incompatible with this AI profile: %s\n' "${present[*]}"
     uv pip uninstall --python "$AI_PYTHON" "${present[@]}"
