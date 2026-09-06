@@ -97,6 +97,10 @@ class DisplayContractTests(unittest.TestCase):
         self.assertIn('runuser -u nobody -- env', installer)
         self.assertNotIn('git config --global', installer)
         self.assertNotIn('\n  git -C "$source_dir"', installer)
+        self.assertIn(
+            'pacman -Qp -- "$package_path"', installer
+        )
+        self.assertNotIn('pacman -Qp --print-format', installer)
 
     def test_ai_profile_switch_removes_incompatible_pascal_state_transactionally(self) -> None:
         bootstrap = (
@@ -139,6 +143,9 @@ class DisplayContractTests(unittest.TestCase):
             "pacman -Sy --noconfirm --needed archlinux-keyring", repair
         )
         self.assertIn("--ignore linux --ignore linux-headers", repair)
+        self.assertIn("'nvidia[-_]modeset'", repair)
+        self.assertIn("'nvidia[-_]uvm'", repair)
+        self.assertIn("'nvidia[-_]drm'", repair)
 
     def test_image_build_rejects_unrepairable_package_manager_state(self) -> None:
         build = (NATIVE_ROOT / "build/build-image.sh").read_text()

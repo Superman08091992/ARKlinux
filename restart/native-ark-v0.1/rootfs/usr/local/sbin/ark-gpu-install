@@ -191,7 +191,9 @@ install_pascal(){
   declare -A package_paths=()
   while IFS= read -r package_path; do
     [[ -f "$package_path" ]] || continue
-    read -r package_name package_version < <(pacman -Qp --print-format '%n %v' "$package_path")
+    # -Qp is Pacman's package-file query and already emits "name version".
+    # --print-format belongs to transaction --print mode and is invalid here.
+    read -r package_name package_version < <(pacman -Qp -- "$package_path")
     case "$package_name" in
       nvidia-580xx-utils|nvidia-580xx-dkms|opencl-nvidia-580xx)
         [[ "${package_version%%-*}" == "$NVIDIA_PASCAL_DRIVER_VERSION" ]] || {

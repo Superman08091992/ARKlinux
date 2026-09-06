@@ -454,9 +454,9 @@ arch-chroot "$TARGET" systemctl set-default graphical.target
 lts_kernel="$(find "$TARGET/usr/lib/modules" -mindepth 1 -maxdepth 1 -type d -name '*-lts' -printf '%f\n' | sort -V | tail -1)"
 [[ -n "$lts_kernel" ]] || { printf 'ERROR: installed LTS kernel was not found\n' >&2; exit 1; }
 arch-chroot "$TARGET" modinfo -k "$lts_kernel" nvidia >/dev/null
-for module_name in nvidia nvidia_modeset nvidia_uvm nvidia_drm; do
+for module_pattern in nvidia 'nvidia[-_]modeset' 'nvidia[-_]uvm' 'nvidia[-_]drm'; do
   arch-chroot "$TARGET" lsinitcpio /boot/initramfs-linux-lts.img | \
-    grep -Eq "/${module_name}\\.ko(\\.(gz|xz|zst))?$"
+    grep -Eq "/${module_pattern}\\.ko(\\.(gz|xz|zst))?$"
 done
 arch-chroot "$TARGET" /bin/bash -lc \
   'grep -q "^MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)$" /etc/mkinitcpio.conf.d/20-ark-nvidia.conf && grep -q "^options nvidia_drm modeset=1 fbdev=1$" /etc/modprobe.d/20-ark-nvidia.conf'
