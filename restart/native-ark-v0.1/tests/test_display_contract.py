@@ -114,7 +114,14 @@ class DisplayContractTests(unittest.TestCase):
         self.assertIn("PACMAN_CONFIG_SOURCE=repair-host", repair)
         self.assertIn("pacman-conf --repo-list", repair)
         self.assertIn("target pacman package database is missing or empty", repair)
-        self.assertIn("pacman -Sy --noconfirm --needed archlinux-keyring", repair)
+        self.assertIn('pacman-key --init', repair)
+        self.assertIn('pacman-key --populate archlinux', repair)
+        self.assertIn('pacman-key --updatedb', repair)
+        self.assertIn("pacman -Sy --noconfirm archlinux-keyring", repair)
+        self.assertNotIn(
+            "pacman -Sy --noconfirm --needed archlinux-keyring", repair
+        )
+        self.assertIn("--ignore linux --ignore linux-headers", repair)
 
     def test_image_build_rejects_unrepairable_package_manager_state(self) -> None:
         build = (NATIVE_ROOT / "build/build-image.sh").read_text()
@@ -123,6 +130,9 @@ class DisplayContractTests(unittest.TestCase):
         self.assertIn("/usr/bin/pacman /usr/bin/pacman-conf /usr/bin/pacman-key", build)
         self.assertIn("pacman -Q pacman archlinux-keyring", build)
         self.assertIn("pacman-conf --repo-list", build)
+        self.assertIn('pacman-key --init', build)
+        self.assertIn('pacman-key --populate archlinux', build)
+        self.assertIn('pacman-key --updatedb', build)
 
 
 class DisplayPreflightTests(unittest.TestCase):

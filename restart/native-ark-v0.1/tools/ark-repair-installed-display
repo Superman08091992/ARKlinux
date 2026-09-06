@@ -332,11 +332,14 @@ ensure_target_pacman_configuration(){
     exit 1
   }
 
-  if [[ ! -s "$TARGET/etc/pacman.d/gnupg/pubring.gpg" ]]; then
-    arch-chroot "$TARGET" pacman-key --init
-    arch-chroot "$TARGET" pacman-key --populate archlinux
-    PACMAN_KEYRING_REPAIRED=1
-  fi
+  # A pubring file alone does not prove that packager keys are trusted. This
+  # image had the current archlinux-keyring package and public keys but an
+  # incomplete owner-trust database, which made every package look corrupt.
+  # These operations are idempotent and preserve signature enforcement.
+  arch-chroot "$TARGET" pacman-key --init
+  arch-chroot "$TARGET" pacman-key --populate archlinux
+  arch-chroot "$TARGET" pacman-key --updatedb
+  PACMAN_KEYRING_REPAIRED=1
 
   printf 'ARK_PACMAN_CONFIGURATION=PASS config_source=%s mirrorlist_source=%s keyring_repaired=%s\n' \
     "$PACMAN_CONFIG_SOURCE" "$PACMAN_MIRRORLIST_SOURCE" "$PACMAN_KEYRING_REPAIRED"
@@ -382,11 +385,19 @@ if [[ -r /etc/resolv.conf ]]; then
   install -Dm0644 /etc/resolv.conf "$TARGET/etc/resolv.conf"
 fi
 
-# Refresh trust metadata first so a stale image keyring cannot block the full
-# upgrade. The full transaction follows immediately; this is not left as a
-# partially upgraded target.
-arch-chroot "$TARGET" pacman -Sy --noconfirm --needed archlinux-keyring
+# Force a small signed keyring reinstall before the large transaction. This is
+# an end-to-end proof that the rebuilt trust database can verify repository
+# packages, and its install hook refreshes the packaged key material. Populate
+# once more afterward so newly shipped owner-trust data takes effect.
+arch-chroot "$TARGET" pacman -Sy --noconfirm archlinux-keyring
+arch-chroot "$TARGET" pacman-key --populate archlinux
+arch-chroot "$TARGET" pacman-key --updatedb
+
+# Do not download or upgrade the mainline kernel immediately before removing
+# it. The LTS kernel is installed and verified first; the old mainline kernel
+# remains available until that transaction has committed successfully.
 arch-chroot "$TARGET" pacman -Syu --noconfirm --needed \
+  --ignore linux --ignore linux-headers \
   linux-lts linux-lts-headers mesa libdrm vulkan-icd-loader vulkan-tools \
   plasma-pa xdg-desktop-portal xdg-desktop-portal-kde rtkit
 

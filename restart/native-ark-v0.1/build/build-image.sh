@@ -173,6 +173,12 @@ arch-chroot "$MNT" /bin/bash -lc '
   grep -qx core <<<"$repo_list"
   grep -qx extra <<<"$repo_list"
 '
+# Package presence is not sufficient: initialize the image-local trust root,
+# import Arch's packaged keys and owner-trust values, then calculate the trust
+# database that Pacman will use after installation.
+arch-chroot "$MNT" pacman-key --init
+arch-chroot "$MNT" pacman-key --populate archlinux
+arch-chroot "$MNT" pacman-key --updatedb
 
 stage "generate locale"
 arch-chroot "$MNT" locale-gen
