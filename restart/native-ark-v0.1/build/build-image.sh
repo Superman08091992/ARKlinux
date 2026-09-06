@@ -152,6 +152,28 @@ if find "$MNT/etc" "$MNT/usr" "$MNT/opt" "$MNT/ark" -uid 1000 -print -quit | gre
   exit 1
 fi
 
+stage "validate package manager recovery contract"
+for path in /etc/pacman.conf /etc/pacman.d/mirrorlist; do
+  [[ -s "$MNT$path" ]] || {
+    echo "ERROR: release image is missing package manager configuration: $path" >&2
+    exit 1
+  }
+done
+for path in /usr/bin/pacman /usr/bin/pacman-conf /usr/bin/pacman-key; do
+  [[ -x "$MNT$path" ]] || {
+    echo "ERROR: release image is missing package manager command: $path" >&2
+    exit 1
+  }
+done
+arch-chroot "$MNT" /bin/bash -lc '
+  test -d /var/lib/pacman/local
+  find /var/lib/pacman/local -mindepth 1 -maxdepth 1 -type d -print -quit | grep -q .
+  pacman -Q pacman archlinux-keyring >/dev/null
+  repo_list="$(pacman-conf --repo-list)"
+  grep -qx core <<<"$repo_list"
+  grep -qx extra <<<"$repo_list"
+'
+
 stage "generate locale"
 arch-chroot "$MNT" locale-gen
 

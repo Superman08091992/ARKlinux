@@ -1,5 +1,7 @@
 base
 base-devel
+pacman
+archlinux-keyring
 linux-lts
 linux-lts-headers
 linux-firmware

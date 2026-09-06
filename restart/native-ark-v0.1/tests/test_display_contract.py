@@ -22,6 +22,8 @@ class DisplayContractTests(unittest.TestCase):
         }
         self.assertIn("linux-lts", packages)
         self.assertIn("linux-lts-headers", packages)
+        self.assertIn("pacman", packages)
+        self.assertIn("archlinux-keyring", packages)
         self.assertNotIn("linux", packages)
         self.assertNotIn("linux-headers", packages)
         for package in (
@@ -106,6 +108,21 @@ class DisplayContractTests(unittest.TestCase):
         ):
             self.assertIn(contract, repair)
         self.assertIn("if (( EXPAND_ROOT == 1 ))", repair)
+        self.assertIn("aligned_last_sector", repair)
+        self.assertIn("ensure_target_pacman_configuration", repair)
+        self.assertIn("target-pacnew", repair)
+        self.assertIn("PACMAN_CONFIG_SOURCE=repair-host", repair)
+        self.assertIn("pacman-conf --repo-list", repair)
+        self.assertIn("target pacman package database is missing or empty", repair)
+        self.assertIn("pacman -Sy --noconfirm --needed archlinux-keyring", repair)
+
+    def test_image_build_rejects_unrepairable_package_manager_state(self) -> None:
+        build = (NATIVE_ROOT / "build/build-image.sh").read_text()
+        self.assertIn('stage "validate package manager recovery contract"', build)
+        self.assertIn("/etc/pacman.conf /etc/pacman.d/mirrorlist", build)
+        self.assertIn("/usr/bin/pacman /usr/bin/pacman-conf /usr/bin/pacman-key", build)
+        self.assertIn("pacman -Q pacman archlinux-keyring", build)
+        self.assertIn("pacman-conf --repo-list", build)
 
 
 class DisplayPreflightTests(unittest.TestCase):
