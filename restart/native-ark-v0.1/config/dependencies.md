@@ -5,7 +5,7 @@ This file separates host/OS packages from isolated Python/model dependencies. AI
 ## 1. Base, build, boot and filesystem — pacman
 
 - base, base-devel
-- linux, linux-headers, linux-firmware
+- linux-lts, linux-lts-headers, linux-firmware
 - btrfs-progs, snapper
 - dosfstools, gptfdisk, efibootmgr
 - cryptsetup, tpm2-tools
@@ -18,9 +18,17 @@ This file separates host/OS packages from isolated Python/model dependencies. AI
 
 ## 2. Hardware, GPU and CUDA — detected hardware profile
 
+- `linux-lts` and `linux-lts-headers` are the native baseline. The release
+  image uses the non-autodetected fallback module set for its first boot so an
+  image built under Hyper-V or QEMU cannot omit the workstation's DRM driver.
+- `ark-display-preflight` runs before greetd. It permits the graphical target
+  only when the detected GPU binding and boot kernel are a proven combination;
+  otherwise ARKlinux starts a local tty1 recovery login instead of repeatedly
+  modesetting. The unused ttyS0 login is masked while serial proof output remains.
+
 - `ark-gpu-detect` inventories display-class PCI devices and records the active kernel binding
 - `nvidia-pascal`: pinned proprietary `nvidia-580xx-dkms`, `nvidia-580xx-utils`, and `opencl-nvidia-580xx`
-- `nvidia-open`: nvidia-open, nvidia-utils, nvidia-settings (Turing or newer only)
+- `nvidia-open`: nvidia-open-dkms, nvidia-utils, nvidia-settings (Turing or newer only)
 - system-default: mesa, libdrm, vulkan-icd-loader, vulkan-tools
 - cuda, cudnn (not installed for Pascal; CUDA 13 removed compute capability 6.1 support)
 - nvidia-container-toolkit
@@ -36,6 +44,10 @@ changes.
 
 The R580 package recipe is locked to one immutable AUR commit and verifies the
 NVIDIA runfile SHA-256 before building as the unprivileged `nobody` account.
+The installer selects headers for every supported installed kernel, replaces
+conflicting NVIDIA packages only after the locked packages have built, enables
+early `nvidia`, `nvidia_modeset`, `nvidia_uvm`, and `nvidia_drm` loading, then
+verifies the module for each installed kernel before declaring success.
 Installation is an explicit administrator action:
 
 ```bash
@@ -50,6 +62,18 @@ R580 driver, leaves Ollama on its CPU runtime, and installs the pinned PyTorch
 2.7.1 CUDA 12.6 wheel that remains usable on compute capability 6.1. It does
 not install CUDA 13 or vLLM; those current compute paths no longer support the
 two Pascal cards.
+
+For an already-flashed native image, run the offline repair from a known-good
+Arch installation. It refuses the active root filesystem, validates both
+target partitions, snapshots the OS and package state, moves the target to the
+LTS kernel, installs the complete Plasma runtime and pinned R580 driver, updates
+the systemd-boot entries, and verifies the offline module/initramfs before it
+allows a reboot:
+
+```bash
+sudo restart/native-ark-v0.1/tools/ark-repair-installed-display \
+  /dev/target-root-partition /dev/target-efi-partition
+```
 
 ## 3. Desktop/compositor/toolkits — pacman
 

@@ -1,0 +1,377 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage(){
+  printf '%s\n' \
+    'usage: ark-repair-installed-display [--expand-root] ROOT_DEVICE ESP_DEVICE' \
+    'example: sudo ./tools/ark-repair-installed-display --expand-root /dev/sdb2 /dev/sdb1' \
+    '' \
+    '--expand-root  repair the backup GPT, extend partition 2 to the end of' \
+    '               the target disk, and grow Btrfs before changing the OS'
+}
+
+EXPAND_ROOT=0
+if [[ ${1:-} == --expand-root ]]; then
+  EXPAND_ROOT=1
+  shift
+fi
+[[ $# -eq 2 ]] || { usage >&2; exit 2; }
+[[ ${EUID:-$(id -u)} -eq 0 ]] || {
+  printf 'ERROR: run this repair as root\n' >&2
+  exit 1
+}
+
+readonly ROOT_DEVICE="$1"
+readonly ESP_DEVICE="$2"
+readonly RELROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly OVERLAY="$RELROOT/rootfs"
+readonly WORK="$(mktemp -d /var/tmp/ark-display-repair.XXXXXX)"
+readonly TOP="$WORK/top"
+readonly TARGET="$WORK/root"
+readonly STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+
+mounted=()
+TARGET_DISK=""
+ROOT_PARTITION_NUMBER=""
+ESP_PARTITION_NUMBER=""
+GPT_BACKUP=""
+PARTITION_TABLE_CHANGED=0
+FILESYSTEM_EXPANSION_STARTED=0
+RESOLVER_STATE_CAPTURED=0
+
+restore_resolver(){
+  (( RESOLVER_STATE_CAPTURED == 1 )) || return 0
+  mountpoint -q "$TARGET" || return 0
+  rm -f "$TARGET/etc/resolv.conf"
+  if [[ -e "$WORK/resolv.conf.target" || -L "$WORK/resolv.conf.target" ]]; then
+    cp -a --no-dereference "$WORK/resolv.conf.target" "$TARGET/etc/resolv.conf"
+  fi
+}
+
+cleanup(){
+  local index
+  set +e
+  restore_resolver
+  for (( index=${#mounted[@]}-1; index>=0; index-- )); do
+    mountpoint -q "${mounted[$index]}" && umount "${mounted[$index]}"
+  done
+  if (( PARTITION_TABLE_CHANGED == 1 && FILESYSTEM_EXPANSION_STARTED == 0 )) \
+      && [[ -n "$TARGET_DISK" && -f "$GPT_BACKUP" ]]; then
+    printf 'Repair failed before Btrfs was grown; restoring the original GPT.\n' >&2
+    sgdisk --load-backup="$GPT_BACKUP" "$TARGET_DISK" >&2
+    blockdev --rereadpt "$TARGET_DISK" 2>/dev/null || partx -u "$TARGET_DISK" 2>/dev/null || true
+    udevadm settle 2>/dev/null || true
+  fi
+  case "$WORK" in
+    /var/tmp/ark-display-repair.*) rm -rf -- "$WORK" ;;
+  esac
+}
+trap cleanup EXIT
+
+for command_name in arch-chroot awk blkid blockdev btrfs cp df find findmnt git grep \
+  install lsblk mount mountpoint pacman partx sed sgdisk sort sync tail tr udevadm; do
+  command -v "$command_name" >/dev/null 2>&1 || {
+    printf 'ERROR: required host command is missing: %s\n' "$command_name" >&2
+    exit 1
+  }
+done
+
+[[ -b "$ROOT_DEVICE" && -b "$ESP_DEVICE" ]] || {
+  printf 'ERROR: both arguments must be block devices\n' >&2
+  exit 1
+}
+[[ "$(blkid -s TYPE -o value "$ROOT_DEVICE")" == btrfs ]] || {
+  printf 'ERROR: %s is not Btrfs\n' "$ROOT_DEVICE" >&2
+  exit 1
+}
+[[ "$(blkid -s LABEL -o value "$ROOT_DEVICE")" == ARKROOT ]] || {
+  printf 'ERROR: %s is not labeled ARKROOT\n' "$ROOT_DEVICE" >&2
+  exit 1
+}
+[[ "$(blkid -s TYPE -o value "$ESP_DEVICE")" == vfat ]] || {
+  printf 'ERROR: %s is not a FAT EFI system partition\n' "$ESP_DEVICE" >&2
+  exit 1
+}
+[[ "$(blkid -s LABEL -o value "$ESP_DEVICE")" == ARKESP ]] || {
+  printf 'ERROR: %s is not labeled ARKESP\n' "$ESP_DEVICE" >&2
+  exit 1
+}
+
+root_parent="$(lsblk -dnro PKNAME "$ROOT_DEVICE" | tr -d '[:space:]')"
+esp_parent="$(lsblk -dnro PKNAME "$ESP_DEVICE" | tr -d '[:space:]')"
+ROOT_PARTITION_NUMBER="$(lsblk -dnro PARTN "$ROOT_DEVICE" | tr -d '[:space:]')"
+ESP_PARTITION_NUMBER="$(lsblk -dnro PARTN "$ESP_DEVICE" | tr -d '[:space:]')"
+[[ -n "$root_parent" && "$root_parent" == "$esp_parent" ]] || {
+  printf 'ERROR: the root and EFI partitions are not on the same physical disk\n' >&2
+  exit 1
+}
+TARGET_DISK="/dev/$root_parent"
+[[ -b "$TARGET_DISK" ]] || {
+  printf 'ERROR: target parent disk is unavailable: %s\n' "$TARGET_DISK" >&2
+  exit 1
+}
+[[ "$ROOT_PARTITION_NUMBER" == 2 && "$ESP_PARTITION_NUMBER" == 1 ]] || {
+  printf 'ERROR: expected the ARKlinux EFI/root layout on partitions 1 and 2\n' >&2
+  exit 1
+}
+
+target_uuid="$(blkid -s UUID -o value "$ROOT_DEVICE")"
+current_uuid="$(findmnt -nro UUID / 2>/dev/null || true)"
+[[ -z "$current_uuid" || "$target_uuid" != "$current_uuid" ]] || {
+  printf 'ERROR: refusing to repair the currently running root filesystem\n' >&2
+  exit 1
+}
+if findmnt -rn -S "$ROOT_DEVICE" >/dev/null 2>&1 || findmnt -rn -S "$ESP_DEVICE" >/dev/null 2>&1; then
+  printf 'ERROR: target partitions are already mounted; unmount them before repair\n' >&2
+  findmnt -rn -S "$ROOT_DEVICE" >&2 || true
+  findmnt -rn -S "$ESP_DEVICE" >&2 || true
+  exit 1
+fi
+
+expand_root_partition(){
+  local before_bytes after_bytes first_sector last_sector last_usable unique_guid type_guid
+  local actual_first actual_uuid backup_dir
+
+  if lsblk -nrpo MOUNTPOINTS "$TARGET_DISK" | grep -q '[^[:space:]]'; then
+    printf 'ERROR: refusing to resize a disk that has mounted partitions: %s\n' "$TARGET_DISK" >&2
+    exit 1
+  fi
+
+  backup_dir=/var/tmp/arklinux-repair-backups
+  install -d -m0700 "$backup_dir"
+  GPT_BACKUP="$backup_dir/${root_parent}-${STAMP}.gpt"
+  sgdisk --backup="$GPT_BACKUP" "$TARGET_DISK"
+  chmod 0600 "$GPT_BACKUP"
+
+  before_bytes="$(blockdev --getsize64 "$ROOT_DEVICE")"
+  first_sector="$(sgdisk -i "$ROOT_PARTITION_NUMBER" "$TARGET_DISK" | awk '/First sector:/ {print $3; exit}')"
+  last_sector="$(sgdisk -i "$ROOT_PARTITION_NUMBER" "$TARGET_DISK" | awk '/Last sector:/ {print $3; exit}')"
+  unique_guid="$(sgdisk -i "$ROOT_PARTITION_NUMBER" "$TARGET_DISK" | awk '/Partition unique GUID:/ {print $4; exit}')"
+  type_guid="$(sgdisk -i "$ROOT_PARTITION_NUMBER" "$TARGET_DISK" | awk '/Partition GUID code:/ {print $4; exit}')"
+  [[ "$first_sector" =~ ^[0-9]+$ && "$last_sector" =~ ^[0-9]+$ ]] || {
+    printf 'ERROR: could not read the ARKROOT partition boundaries\n' >&2
+    exit 1
+  }
+  [[ "$unique_guid" =~ ^[0-9A-Fa-f-]{36}$ && "$type_guid" =~ ^[0-9A-Fa-f-]{36}$ ]] || {
+    printf 'ERROR: could not preserve the ARKROOT partition identity\n' >&2
+    exit 1
+  }
+
+  # Raw images retain their backup GPT at the image boundary. Move it to the
+  # physical end of the flashed disk before determining the usable final sector.
+  sgdisk -e "$TARGET_DISK"
+  last_usable="$(sgdisk -E "$TARGET_DISK")"
+  [[ "$last_usable" =~ ^[0-9]+$ ]] || {
+    printf 'ERROR: could not determine the target disk boundary\n' >&2
+    exit 1
+  }
+  if (( last_usable <= last_sector )); then
+    printf 'ARK_ROOT_EXPANSION=SKIP reason=already_full\n'
+    return 0
+  fi
+
+  PARTITION_TABLE_CHANGED=1
+  sgdisk \
+    --delete="$ROOT_PARTITION_NUMBER" \
+    --new="$ROOT_PARTITION_NUMBER:$first_sector:0" \
+    --typecode="$ROOT_PARTITION_NUMBER:$type_guid" \
+    --change-name="$ROOT_PARTITION_NUMBER:ARKROOT" \
+    --partition-guid="$ROOT_PARTITION_NUMBER:$unique_guid" \
+    "$TARGET_DISK"
+  sgdisk -v "$TARGET_DISK"
+  blockdev --rereadpt "$TARGET_DISK" || partx -u "$TARGET_DISK"
+  udevadm settle
+
+  actual_first="$(sgdisk -i "$ROOT_PARTITION_NUMBER" "$TARGET_DISK" | awk '/First sector:/ {print $3; exit}')"
+  actual_uuid="$(blkid -s UUID -o value "$ROOT_DEVICE")"
+  after_bytes="$(blockdev --getsize64 "$ROOT_DEVICE")"
+  [[ "$actual_first" == "$first_sector" && "$actual_uuid" == "$target_uuid" ]] || {
+    printf 'ERROR: partition identity changed during expansion\n' >&2
+    exit 1
+  }
+  (( after_bytes > before_bytes )) || {
+    printf 'ERROR: the kernel did not expose the expanded partition size\n' >&2
+    exit 1
+  }
+  printf 'ARK_ROOT_PARTITION_EXPANDED=PASS before_bytes=%s after_bytes=%s\n' \
+    "$before_bytes" "$after_bytes"
+}
+
+if (( EXPAND_ROOT == 1 )); then
+  expand_root_partition
+fi
+
+mkdir -p "$TOP" "$TARGET"
+mount -o rw,subvolid=5 "$ROOT_DEVICE" "$TOP"
+mounted+=("$TOP")
+
+if (( PARTITION_TABLE_CHANGED == 1 )); then
+  # Never restore the smaller GPT after this point; Btrfs may have committed
+  # the larger device size even if a later repair step fails.
+  FILESYSTEM_EXPANSION_STARTED=1
+  btrfs filesystem resize max "$TOP"
+  printf 'ARK_BTRFS_EXPANSION=PASS\n'
+fi
+
+available_kib="$(df -Pk "$TOP" | awk 'NR == 2 {print $4}')"
+[[ "$available_kib" =~ ^[0-9]+$ ]] || {
+  printf 'ERROR: could not determine free space on ARKROOT\n' >&2
+  exit 1
+}
+(( available_kib >= 6 * 1024 * 1024 )) || {
+  printf 'ERROR: ARKROOT needs at least 6 GiB free for the repair; available KiB=%s\n' \
+    "$available_kib" >&2
+  exit 1
+}
+
+[[ -d "$TOP/@ark" ]] || { printf 'ERROR: @ark subvolume is missing\n' >&2; exit 1; }
+[[ "$(tr -d '\r\n' < "$TOP/@ark/etc/hostname")" == ARKlinux ]] || {
+  printf 'ERROR: target hostname is not ARKlinux\n' >&2
+  exit 1
+}
+[[ -f "$TOP/@ark/etc/ark/ARK_GENESIS_COMMIT" ]] || {
+  printf 'ERROR: ARKlinux provenance marker is missing\n' >&2
+  exit 1
+}
+
+snapshot_names=()
+for subvolume in @ark @var @log @pkg; do
+  [[ -d "$TOP/$subvolume" ]] || {
+    printf 'ERROR: required subvolume is missing: %s\n' "$subvolume" >&2
+    exit 1
+  }
+  snapshot="$TOP/${subvolume}-before-display-repair-$STAMP"
+  btrfs subvolume snapshot -r "$TOP/$subvolume" "$snapshot"
+  snapshot_names+=("${snapshot#$TOP/}")
+done
+
+mount -o rw,subvol=@ark "$ROOT_DEVICE" "$TARGET"
+mounted+=("$TARGET")
+mount -o rw,subvol=@var "$ROOT_DEVICE" "$TARGET/var"
+mounted+=("$TARGET/var")
+mount -o rw,subvol=@log "$ROOT_DEVICE" "$TARGET/var/log"
+mounted+=("$TARGET/var/log")
+mount -o rw,subvol=@pkg "$ROOT_DEVICE" "$TARGET/var/cache/pacman/pkg"
+mounted+=("$TARGET/var/cache/pacman/pkg")
+mount "$ESP_DEVICE" "$TARGET/boot"
+mounted+=("$TARGET/boot")
+
+install -Dm0755 "$OVERLAY/usr/local/sbin/ark-gpu-detect" \
+  "$TARGET/usr/local/sbin/ark-gpu-detect"
+install -Dm0755 "$OVERLAY/usr/local/sbin/ark-gpu-install" \
+  "$TARGET/usr/local/sbin/ark-gpu-install"
+install -Dm0755 "$OVERLAY/usr/local/sbin/ark-display-preflight" \
+  "$TARGET/usr/local/sbin/ark-display-preflight"
+install -Dm0755 "$OVERLAY/usr/local/bin/ark-bootstrap-ai" \
+  "$TARGET/usr/local/bin/ark-bootstrap-ai"
+install -Dm0755 "$OVERLAY/usr/local/bin/ark-session" \
+  "$TARGET/usr/local/bin/ark-session"
+install -Dm0644 "$OVERLAY/usr/lib/ark-gpu/nvidia-pascal.lock" \
+  "$TARGET/usr/lib/ark-gpu/nvidia-pascal.lock"
+install -Dm0644 "$OVERLAY/etc/systemd/system/ark-gpu-report.service" \
+  "$TARGET/etc/systemd/system/ark-gpu-report.service"
+install -Dm0644 "$OVERLAY/etc/systemd/system/ark-display-preflight.service" \
+  "$TARGET/etc/systemd/system/ark-display-preflight.service"
+install -Dm0644 "$OVERLAY/etc/systemd/system/greetd.service.d/10-arklinux-vt.conf" \
+  "$TARGET/etc/systemd/system/greetd.service.d/10-arklinux-vt.conf"
+install -Dm0644 "$OVERLAY/etc/greetd/config.toml" \
+  "$TARGET/etc/greetd/config.toml"
+rm -f "$TARGET/etc/greetd/greetd-spawn.pam_env.conf" \
+  "$TARGET/etc/pam.d/greetd-spawn"
+install -Dm0644 "$OVERLAY/etc/greetd/greetd-pam-env.conf" \
+  "$TARGET/etc/greetd/greetd-pam-env.conf"
+install -Dm0644 "$OVERLAY/etc/pam.d/greetd" \
+  "$TARGET/etc/pam.d/greetd"
+
+# A chroot needs working name resolution while pacman and the pinned AUR build
+# fetch packages. NetworkManager will regenerate this file on normal boot.
+if [[ -r /etc/resolv.conf ]]; then
+  if [[ -e "$TARGET/etc/resolv.conf" || -L "$TARGET/etc/resolv.conf" ]]; then
+    cp -a --no-dereference "$TARGET/etc/resolv.conf" "$WORK/resolv.conf.target"
+  fi
+  RESOLVER_STATE_CAPTURED=1
+  rm -f "$TARGET/etc/resolv.conf"
+  install -Dm0644 /etc/resolv.conf "$TARGET/etc/resolv.conf"
+fi
+
+arch-chroot "$TARGET" pacman -Syu --noconfirm --needed \
+  linux-lts linux-lts-headers mesa libdrm vulkan-icd-loader vulkan-tools \
+  plasma-pa xdg-desktop-portal xdg-desktop-portal-kde rtkit
+
+entry_count=0
+for entry in "$TARGET"/boot/loader/entries/arklinux*.conf; do
+  [[ -f "$entry" ]] || continue
+  entry_count=$((entry_count + 1))
+  cp -a "$entry" "$entry.before-display-repair-$STAMP"
+  sed -i -E \
+    -e 's|^linux[[:space:]].*$|linux /vmlinuz-linux-lts|' \
+    -e '/^options[[:space:]]/ s/[[:space:]]+nomodeset([[:space:]]|$)/ /g' \
+    "$entry"
+  if [[ "$entry" == *fallback.conf ]]; then
+    sed -i -E 's|^initrd[[:space:]].*$|initrd /initramfs-linux-lts-fallback.img|' "$entry"
+  else
+    sed -i -E 's|^initrd[[:space:]].*$|initrd /initramfs-linux-lts.img|' "$entry"
+  fi
+done
+(( entry_count > 0 )) || {
+  printf 'ERROR: no ARKlinux systemd-boot entries were found\n' >&2
+  exit 1
+}
+
+[[ -s "$TARGET/boot/vmlinuz-linux-lts" ]] || {
+  printf 'ERROR: LTS kernel image was not installed\n' >&2
+  exit 1
+}
+[[ -s "$TARGET/boot/initramfs-linux-lts.img" ]] || {
+  printf 'ERROR: LTS initramfs was not generated\n' >&2
+  exit 1
+}
+
+# Avoid asking DKMS to build the legacy driver against the unproven 7.2 kernel.
+# The repaired installation boots only the LTS kernel that matches the known-
+# working arknode graphics baseline.
+remove_kernel_packages=()
+for package_name in linux linux-headers; do
+  if arch-chroot "$TARGET" pacman -Q "$package_name" >/dev/null 2>&1; then
+    remove_kernel_packages+=("$package_name")
+  fi
+done
+if (( ${#remove_kernel_packages[@]} )); then
+  arch-chroot "$TARGET" pacman -R --noconfirm "${remove_kernel_packages[@]}"
+fi
+
+arch-chroot "$TARGET" /usr/local/sbin/ark-gpu-install nvidia-pascal
+
+arch-chroot "$TARGET" systemctl enable \
+  ark-gpu-report.service ark-display-preflight.service greetd.service
+arch-chroot "$TARGET" systemctl unmask getty@tty1.service
+arch-chroot "$TARGET" systemctl mask serial-getty@ttyS0.service
+arch-chroot "$TARGET" systemctl set-default graphical.target
+
+lts_kernel="$(find "$TARGET/usr/lib/modules" -mindepth 1 -maxdepth 1 -type d -name '*-lts' -printf '%f\n' | sort -V | tail -1)"
+[[ -n "$lts_kernel" ]] || { printf 'ERROR: installed LTS kernel was not found\n' >&2; exit 1; }
+arch-chroot "$TARGET" modinfo -k "$lts_kernel" nvidia >/dev/null
+for module_name in nvidia nvidia_modeset nvidia_uvm nvidia_drm; do
+  arch-chroot "$TARGET" lsinitcpio /boot/initramfs-linux-lts.img | \
+    grep -Eq "/${module_name}\\.ko(\\.(gz|xz|zst))?$"
+done
+arch-chroot "$TARGET" /bin/bash -lc \
+  'grep -q "^MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)$" /etc/mkinitcpio.conf.d/20-ark-nvidia.conf && grep -q "^options nvidia_drm modeset=1 fbdev=1$" /etc/modprobe.d/20-ark-nvidia.conf'
+arch-chroot "$TARGET" /bin/bash -lc \
+  'grep -q "^OnFailure=getty@tty1.service$" /etc/systemd/system/ark-display-preflight.service && test "$(readlink /etc/systemd/system/serial-getty@ttyS0.service)" = /dev/null'
+grep -q '^linux /vmlinuz-linux-lts$' "$TARGET/boot/loader/entries/arklinux.conf"
+grep -q '^initrd /initramfs-linux-lts.img$' "$TARGET/boot/loader/entries/arklinux.conf"
+
+repair_commit="$(git -C "$RELROOT" rev-parse HEAD 2>/dev/null || printf unknown)"
+printf '%s\n' "$repair_commit" > "$TARGET/etc/ark/DISPLAY_REPAIR_COMMIT"
+sync
+
+printf '\nARK_DISPLAY_REPAIR=PASS\n'
+printf 'target_root=%s\n' "$ROOT_DEVICE"
+printf 'target_esp=%s\n' "$ESP_DEVICE"
+printf 'boot_kernel=%s\n' "$lts_kernel"
+printf 'rollback_snapshots=%s\n' "${snapshot_names[*]}"
+if [[ -n "$GPT_BACKUP" ]]; then
+  printf 'gpt_backup=%s\n' "$GPT_BACKUP"
+fi
+printf 'The target is ready for a powered-off boot. Do not reboot from this script.\n'

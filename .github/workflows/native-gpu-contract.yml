@@ -27,11 +27,15 @@ jobs:
         run: |
           bash -n \
             restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-gpu-install \
+            restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-display-preflight \
             restart/native-ark-v0.1/rootfs/usr/local/bin/ark-bootstrap-ai \
-            restart/native-ark-v0.1/build/build-image.sh
+            restart/native-ark-v0.1/build/build-image.sh \
+            restart/native-ark-v0.1/tools/ark-repair-installed-display
           shellcheck -S warning \
             restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-gpu-install \
-            restart/native-ark-v0.1/rootfs/usr/local/bin/ark-bootstrap-ai
+            restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-display-preflight \
+            restart/native-ark-v0.1/rootfs/usr/local/bin/ark-bootstrap-ai \
+            restart/native-ark-v0.1/tools/ark-repair-installed-display
       - name: Run GPU detection tests
         run: python -m unittest discover -s restart/native-ark-v0.1/tests -v
       - name: Validate immutable Pascal source lock
@@ -44,3 +48,15 @@ jobs:
           grep -q '10de:1c31' "$LOCK"
           grep -q '^NVIDIA_PASCAL_TORCH_VERSION=2\.7\.1$' "$LOCK"
           grep -q '^NVIDIA_PASCAL_TORCH_INDEX=https://download\.pytorch\.org/whl/cu126$' "$LOCK"
+      - name: Validate portable native display contract
+        run: |
+          PKGS=restart/native-ark-v0.1/config/packages.x86_64
+          grep -qx 'linux-lts' "$PKGS"
+          grep -qx 'linux-lts-headers' "$PKGS"
+          ! grep -qx 'linux' "$PKGS"
+          ! grep -qx 'linux-headers' "$PKGS"
+          grep -q 'INITRAMFS_FALLBACK' restart/native-ark-v0.1/build/build-image.sh
+          ! grep -q '^service[[:space:]]*=' restart/native-ark-v0.1/rootfs/etc/greetd/config.toml
+          grep -q 'pam_env.so conffile=/etc/greetd/greetd-pam-env.conf' restart/native-ark-v0.1/rootfs/etc/pam.d/greetd
+          grep -q 'Requires=ark-display-preflight.service' restart/native-ark-v0.1/rootfs/etc/systemd/system/greetd.service.d/10-arklinux-vt.conf
+          grep -q '^OnFailure=getty@tty1.service$' restart/native-ark-v0.1/rootfs/etc/systemd/system/ark-display-preflight.service

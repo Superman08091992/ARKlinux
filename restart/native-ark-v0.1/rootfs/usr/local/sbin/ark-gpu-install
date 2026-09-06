@@ -53,6 +53,62 @@ refresh_initramfs(){
   fi
 }
 
+kernel_header_packages(){
+  local found=0
+  if pacman -Q linux-lts >/dev/null 2>&1; then
+    printf '%s\n' linux-lts-headers
+    found=1
+  fi
+  if pacman -Q linux >/dev/null 2>&1; then
+    printf '%s\n' linux-headers
+    found=1
+  fi
+  if pacman -Q linux-zen >/dev/null 2>&1; then
+    printf '%s\n' linux-zen-headers
+    found=1
+  fi
+  if pacman -Q linux-hardened >/dev/null 2>&1; then
+    printf '%s\n' linux-hardened-headers
+    found=1
+  fi
+  (( found == 1 )) || {
+    printf 'ERROR: no supported installed kernel package was found\n' >&2
+    return 1
+  }
+}
+
+configure_proprietary_modules(){
+  install -d -m0755 /etc/modprobe.d /etc/mkinitcpio.conf.d
+  cat > /etc/modprobe.d/20-ark-nvidia.conf <<'EOF'
+# ARKlinux proprietary NVIDIA display/compute binding.
+blacklist nouveau
+options nouveau modeset=0
+options nvidia_drm modeset=1 fbdev=1
+EOF
+  cat > /etc/mkinitcpio.conf.d/20-ark-nvidia.conf <<'EOF'
+# Load the proprietary stack before the graphical target starts.
+MODULES=(nvidia nvidia_modeset nvidia_uvm nvidia_drm)
+EOF
+}
+
+verify_built_modules(){
+  local kernel_directory kernel_version checked=0
+  for kernel_directory in /usr/lib/modules/*; do
+    [[ -d "$kernel_directory" && -e "$kernel_directory/build" ]] || continue
+    kernel_version="${kernel_directory##*/}"
+    if ! modinfo -k "$kernel_version" nvidia >/dev/null 2>&1; then
+      printf 'ERROR: NVIDIA module is unavailable for kernel %s\n' "$kernel_version" >&2
+      return 1
+    fi
+    printf 'Verified NVIDIA module for kernel %s\n' "$kernel_version"
+    checked=1
+  done
+  (( checked == 1 )) || {
+    printf 'ERROR: no installed kernel with matching headers was available for verification\n' >&2
+    return 1
+  }
+}
+
 install_pascal(){
   [[ -r "$LOCK_FILE" ]] || { printf 'ERROR: missing Pascal source lock: %s\n' "$LOCK_FILE" >&2; return 1; }
   # shellcheck disable=SC1090
@@ -62,17 +118,27 @@ install_pascal(){
   [[ "$NVIDIA_PASCAL_AUR_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { printf 'ERROR: invalid AUR commit lock\n' >&2; return 1; }
   [[ "$NVIDIA_PASCAL_RUNFILE_SHA256" =~ ^[0-9a-f]{64}$ ]] || { printf 'ERROR: invalid NVIDIA source hash lock\n' >&2; return 1; }
 
-  if pacman -Q nvidia-580xx-dkms >/dev/null 2>&1 && pacman -Q nvidia-580xx-utils >/dev/null 2>&1; then
+  mapfile -t header_packages < <(kernel_header_packages)
+  (( ${#header_packages[@]} > 0 )) || {
+    printf 'ERROR: no matching kernel header package could be selected\n' >&2
+    return 1
+  }
+  pacman -Syu --noconfirm --needed \
+    base-devel dkms git libglvnd egl-wayland egl-gbm egl-x11 \
+    "${header_packages[@]}"
+
+  if pacman -Q nvidia-580xx-dkms >/dev/null 2>&1 \
+      && pacman -Q nvidia-580xx-utils >/dev/null 2>&1 \
+      && pacman -Q opencl-nvidia-580xx >/dev/null 2>&1; then
     installed_version="$(pacman -Q nvidia-580xx-dkms | awk '{print $2}' | cut -d- -f1)"
     if [[ "$installed_version" == "$NVIDIA_PASCAL_DRIVER_VERSION" ]]; then
       printf 'Pinned NVIDIA R580 packages are already installed.\n'
+      configure_proprietary_modules
       refresh_initramfs
+      verify_built_modules
       return 0
     fi
   fi
-
-  pacman -Syu --noconfirm --needed \
-    base-devel dkms linux-headers git libglvnd egl-wayland egl-gbm egl-x11
 
   build_root="$(mktemp -d /var/tmp/ark-nvidia-580.XXXXXX)"
   source_dir="$build_root/source"
@@ -131,11 +197,26 @@ install_pascal(){
     }
   done
 
+  conflicting_packages=()
+  for package_name in \
+    nvidia nvidia-lts nvidia-dkms nvidia-open nvidia-open-lts nvidia-open-dkms \
+    nvidia-utils opencl-nvidia; do
+    if pacman -Q "$package_name" >/dev/null 2>&1; then
+      conflicting_packages+=("$package_name")
+    fi
+  done
+  if (( ${#conflicting_packages[@]} )); then
+    printf 'Replacing incompatible NVIDIA packages: %s\n' "${conflicting_packages[*]}"
+    pacman -Rdd --noconfirm "${conflicting_packages[@]}"
+  fi
+
   pacman -U --noconfirm \
     "${package_paths[nvidia-580xx-utils]}" \
     "${package_paths[opencl-nvidia-580xx]}" \
     "${package_paths[nvidia-580xx-dkms]}"
+  configure_proprietary_modules
   refresh_initramfs
+  verify_built_modules
   cleanup_pascal_build
   trap - EXIT
   printf 'Installed NVIDIA proprietary R580 for Pascal. Reboot before verification.\n'
@@ -144,12 +225,24 @@ install_pascal(){
 case "$PROFILE" in
   nvidia-pascal) install_pascal ;;
   nvidia-open)
-    pacman -Syu --noconfirm --needed nvidia-open nvidia-utils nvidia-settings
+    mapfile -t header_packages < <(kernel_header_packages)
+    (( ${#header_packages[@]} > 0 )) || {
+      printf 'ERROR: no matching kernel header package could be selected\n' >&2
+      exit 1
+    }
+    pacman -Syu --noconfirm --needed \
+      nvidia-open-dkms nvidia-utils nvidia-settings "${header_packages[@]}"
+    configure_proprietary_modules
     refresh_initramfs
+    verify_built_modules
     printf 'Installed NVIDIA open modules. Reboot before verification.\n'
     ;;
   system-default)
     pacman -Syu --noconfirm --needed mesa libdrm vulkan-icd-loader vulkan-tools
+    rm -f /etc/modprobe.d/20-ark-nvidia.conf \
+      /etc/mkinitcpio.conf.d/20-ark-nvidia.conf \
+      /etc/modprobe.d/20-ark-nvidia-pascal.conf \
+      /etc/mkinitcpio.conf.d/20-ark-nvidia-pascal.conf
     refresh_initramfs
     printf 'Retained the kernel/Mesa GPU driver stack.\n'
     ;;
