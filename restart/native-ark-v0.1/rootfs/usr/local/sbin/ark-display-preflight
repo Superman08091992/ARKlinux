@@ -30,12 +30,14 @@ ready(){
 [[ -x "$DETECTOR" ]] || fail "gpu_detector_missing"
 report="$($DETECTOR)" || fail "gpu_inventory_failed"
 profile="$(jq -er '.recommended_profile' <<<"$report")" || fail "gpu_profile_missing"
+inventory_status="$(jq -er '.status' <<<"$report")" || fail "gpu_status_missing"
 display_count="$(jq '[.devices[]] | length' <<<"$report")"
 (( display_count > 0 )) || fail "no_display_device_detected"
 
 [[ "$profile" != manual ]] || fail "gpu_profile_requires_manual_selection"
 
 if [[ "$profile" != nvidia-pascal ]]; then
+  [[ "$inventory_status" == ready ]] || fail "gpu_driver_binding_incomplete"
   ready "$profile"
   exit 0
 fi

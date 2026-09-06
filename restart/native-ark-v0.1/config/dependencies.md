@@ -61,7 +61,10 @@ nvidia-smi
 R580 driver, leaves Ollama on its CPU runtime, and installs the pinned PyTorch
 2.7.1 CUDA 12.6 wheel that remains usable on compute capability 6.1. It does
 not install CUDA 13 or vLLM; those current compute paths no longer support the
-two Pascal cards.
+two Pascal cards. Switching an existing installation to Pascal removes stale
+CUDA 13, cuDNN, Ollama CUDA, vLLM, Triton, and NCCL state. AI profile changes
+are built beside the live venv and activated only after installation succeeds;
+the previous venv is retained for rollback.
 
 For an already-flashed native image, run the offline repair from a known-good
 Arch installation. It refuses the active root filesystem, validates both

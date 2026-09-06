@@ -5,6 +5,18 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
   exec sudo "$0" "$@"
 fi
 
+remove_system_packages(){
+  local package_name
+  local -a installed=()
+  for package_name in "$@"; do
+    pacman -Q "$package_name" >/dev/null 2>&1 && installed+=("$package_name")
+  done
+  if (( ${#installed[@]} )); then
+    printf 'Removing packages incompatible with this AI profile: %s\n' "${installed[*]}"
+    pacman -R --noconfirm "${installed[@]}"
+  fi
+}
+
 PROFILE="${1:-auto}"
 if [[ "$PROFILE" == auto || "$PROFILE" == nvidia ]]; then
   PROFILE="$(/usr/local/sbin/ark-gpu-detect --profile)"
@@ -15,6 +27,7 @@ case "$PROFILE" in
     /usr/local/sbin/ark-gpu-install nvidia-pascal
     # CUDA 13 and vLLM do not support compute capability 6.1. Keep Ollama on
     # CPU; the isolated Python environment gets a compatible CUDA 12.6 wheel.
+    remove_system_packages cuda cudnn ollama-cuda
     pacman -Syu --noconfirm --needed nvidia-container-toolkit ollama uv
     ;;
   nvidia-open)
@@ -39,17 +52,64 @@ case "$PROFILE" in
     ;;
 esac
 
-install -d -m0750 -o root -g root /ark/venvs
-if [[ ! -x /ark/venvs/ai/bin/python ]]; then
-  uv python install 3.12
-  uv venv --python 3.12 /ark/venvs/ai
+readonly AI_VENV_ROOT=/ark/venvs
+readonly AI_VENV="$AI_VENV_ROOT/ai"
+ACTIVE_VENV="$AI_VENV"
+AI_BUILD=""
+AI_BACKUP=""
+
+cleanup_ai_build(){
+  if [[ -n "$AI_BUILD" && -d "$AI_BUILD" ]]; then
+    case "$AI_BUILD" in
+      /ark/venvs/.ai-build.*) rm -rf -- "$AI_BUILD" ;;
+    esac
+  fi
+}
+trap cleanup_ai_build EXIT
+
+install -d -m0750 -o root -g root "$AI_VENV_ROOT"
+existing_profile=""
+if [[ -r "$AI_VENV/.ark-profile" ]]; then
+  existing_profile="$(tr -d '\r\n' < "$AI_VENV/.ark-profile")"
 fi
+
+# Profile changes are built beside the live environment. The old environment
+# is moved only after every wheel and the browser runtime install successfully.
+if [[ ! -x "$AI_VENV/bin/python" || "$existing_profile" != "$PROFILE" ]]; then
+  uv python install 3.12
+  AI_BUILD="$(mktemp -d "$AI_VENV_ROOT/.ai-build.XXXXXX")"
+  uv venv --python 3.12 "$AI_BUILD"
+  ACTIVE_VENV="$AI_BUILD"
+fi
+readonly AI_PYTHON="$ACTIVE_VENV/bin/python"
+
+remove_venv_packages(){
+  local -a present=()
+  mapfile -t present < <(
+    "$AI_PYTHON" - "$@" <<'PY'
+from importlib import metadata
+import sys
+
+for package in sys.argv[1:]:
+    try:
+        metadata.version(package)
+    except metadata.PackageNotFoundError:
+        continue
+    print(package)
+PY
+  )
+  if (( ${#present[@]} )); then
+    printf 'Removing Python packages incompatible with this AI profile: %s\n' "${present[*]}"
+    uv pip uninstall --python "$AI_PYTHON" "${present[@]}"
+  fi
+}
 
 case "$PROFILE" in
   nvidia-pascal)
+    remove_venv_packages vllm triton nvidia-nccl-cu12
     # shellcheck disable=SC1091
     source /usr/lib/ark-gpu/nvidia-pascal.lock
-    uv pip install --python /ark/venvs/ai/bin/python \
+    uv pip install --python "$AI_PYTHON" \
       --index-url "$NVIDIA_PASCAL_TORCH_INDEX" \
       "torch==$NVIDIA_PASCAL_TORCH_VERSION" || {
         echo "R580 is installed, but the pinned CUDA 12.6 PyTorch wheel could not be installed." >&2
@@ -57,21 +117,43 @@ case "$PROFILE" in
       }
     ;;
   nvidia-open)
-    uv pip install --python /ark/venvs/ai/bin/python torch triton vllm nvidia-nccl-cu12 || {
+    uv pip install --python "$AI_PYTHON" torch triton vllm nvidia-nccl-cu12 || {
       echo "Core NVIDIA packages installed, but one or more Python GPU wheels were unavailable for this hardware/runtime combination." >&2
       exit 3
     }
     ;;
   system-default|cpu)
-    uv pip install --python /ark/venvs/ai/bin/python \
+    remove_venv_packages vllm triton nvidia-nccl-cu12
+    uv pip install --python "$AI_PYTHON" \
       --index-url https://download.pytorch.org/whl/cpu torch
     ;;
 esac
 
-uv pip install --python /ark/venvs/ai/bin/python \
+uv pip install --python "$AI_PYTHON" \
   fastapi uvicorn pydantic accelerate transformers safetensors tokenizers \
   sentence-transformers httpx websockets psutil numpy scipy pandas \
   requests beautifulsoup4 lxml selenium playwright aiohttp tenacity python-dateutil
 
-/ark/venvs/ai/bin/python -m playwright install chromium
+"$AI_PYTHON" -m playwright install chromium
+printf '%s\n' "$PROFILE" > "$ACTIVE_VENV/.ark-profile"
+
+if [[ -n "$AI_BUILD" ]]; then
+  if [[ -e "$AI_VENV" || -L "$AI_VENV" ]]; then
+    AI_BACKUP="$AI_VENV_ROOT/.ai-before-${PROFILE}-$(date -u +%Y%m%dT%H%M%SZ)-${BASHPID}"
+    mv "$AI_VENV" "$AI_BACKUP"
+  fi
+  if ! mv "$AI_BUILD" "$AI_VENV"; then
+    if [[ -n "$AI_BACKUP" && -e "$AI_BACKUP" ]]; then
+      mv "$AI_BACKUP" "$AI_VENV"
+      AI_BACKUP=""
+    fi
+    printf 'ERROR: could not activate the completed AI environment\n' >&2
+    exit 1
+  fi
+  AI_BUILD=""
+fi
+trap - EXIT
 printf 'AI profile %s installed under /ark/venvs/ai\n' "$PROFILE"
+if [[ -n "$AI_BACKUP" ]]; then
+  printf 'Previous AI environment retained for rollback at %s\n' "$AI_BACKUP"
+fi

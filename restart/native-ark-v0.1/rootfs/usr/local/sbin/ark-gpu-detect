@@ -75,6 +75,14 @@ def architecture(vendor: str | None, device: str | None, name: str) -> str | Non
     # detection safely while the two target IDs above remain independently exact.
     if re.search(r"\bGP(?:100|10[24678])(?:GL|B)?\b", name, re.IGNORECASE):
         return "pascal"
+    # Open NVIDIA kernel modules support Turing and newer. Recognize only
+    # explicit NVIDIA architecture codenames; an unfamiliar name stays manual.
+    if re.search(
+        r"\b(?:TU10[246]|TU11[067]|GA10[0246-8]|AD10[2346-7]|GH(?:100|200)|GB[12][0-9]{2})(?:GL|B)?\b",
+        name,
+        re.IGNORECASE,
+    ):
+        return "turing_or_newer"
     return "unknown"
 
 
@@ -118,6 +126,8 @@ def recommended_profile(devices: list[dict[str, Any]]) -> tuple[str, str]:
     architectures = {item["architecture"] for item in nvidia}
     if architectures == {"pascal"}:
         return "nvidia-pascal", "All detected NVIDIA GPUs require proprietary R580."
+    if architectures == {"turing_or_newer"}:
+        return "nvidia-open", "All detected NVIDIA GPUs support the open kernel modules."
     if "pascal" in architectures:
         return "manual", "Pascal is mixed with an unclassified NVIDIA GPU; automatic replacement is unsafe."
     return "manual", "NVIDIA hardware was detected but its architecture was not proven."
@@ -125,7 +135,9 @@ def recommended_profile(devices: list[dict[str, Any]]) -> tuple[str, str]:
 
 def health(devices: list[dict[str, Any]], profile: str) -> tuple[str, list[str]]:
     concerns: list[str] = []
-    if profile == "nvidia-pascal":
+    if not devices:
+        concerns.append("no display-class PCI device was detected")
+    elif profile in {"nvidia-pascal", "nvidia-open"}:
         for item in devices:
             if item["vendor_id"] != NVIDIA_VENDOR:
                 continue
@@ -136,6 +148,12 @@ def health(devices: list[dict[str, Any]], profile: str) -> tuple[str, list[str]]
                 )
     elif profile == "manual":
         concerns.append("automatic driver selection is intentionally blocked")
+    elif profile == "system-default":
+        for item in devices:
+            if not item["driver"]:
+                concerns.append(
+                    f"{item['slot']} {item['pci_id']} has no active kernel driver"
+                )
     return ("attention" if concerns else "ready"), concerns
 
 

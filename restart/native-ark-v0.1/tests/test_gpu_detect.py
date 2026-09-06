@@ -73,6 +73,29 @@ class GpuDetectTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "system-default")
 
+    def test_unbound_system_default_fails_verification(self):
+        self.add_gpu("0000:01:00.0", "1002", "9999", None, "AMD display", True)
+        result = self.run_detector("--verify")
+        self.assertNotEqual(result.returncode, 0)
+        value = json.loads(result.stdout)
+        self.assertEqual(value["status"], "attention")
+        self.assertIn("no active kernel driver", value["concerns"][0])
+
+    def test_turing_selects_open_kernel_modules(self):
+        self.add_gpu(
+            "0000:01:00.0",
+            "10de",
+            "1e84",
+            "nvidia",
+            "NVIDIA TU104 GeForce RTX 2080",
+            True,
+        )
+        result = self.run_detector("--verify")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = json.loads(result.stdout)
+        self.assertEqual(value["recommended_profile"], "nvidia-open")
+        self.assertEqual(value["status"], "ready")
+
     def test_installer_auto_dry_run_uses_detected_profile(self):
         self.add_gpu("0000:15:00.0", "10de", "1d01", "nouveau", "NVIDIA GP108 GeForce GT 1030", True)
         env = os.environ.copy()

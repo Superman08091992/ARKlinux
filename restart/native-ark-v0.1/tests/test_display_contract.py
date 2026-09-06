@@ -79,6 +79,17 @@ class DisplayContractTests(unittest.TestCase):
         self.assertIn("refresh_initramfs", block)
         self.assertIn("verify_built_modules", block)
 
+    def test_ai_profile_switch_removes_incompatible_pascal_state_transactionally(self) -> None:
+        bootstrap = (
+            NATIVE_ROOT / "rootfs/usr/local/bin/ark-bootstrap-ai"
+        ).read_text()
+        self.assertIn("remove_system_packages cuda cudnn ollama-cuda", bootstrap)
+        self.assertIn(
+            "remove_venv_packages vllm triton nvidia-nccl-cu12", bootstrap
+        )
+        self.assertIn("$AI_VENV_ROOT/.ai-build.XXXXXX", bootstrap)
+        self.assertIn("Previous AI environment retained for rollback", bootstrap)
+
     def test_offline_repair_has_identity_rollback_and_expansion_guards(self) -> None:
         repair = (
             NATIVE_ROOT / "tools/ark-repair-installed-display"
@@ -119,9 +130,26 @@ class DisplayPreflightTests(unittest.TestCase):
     def write_detector(self, driver: str) -> None:
         value = {
             "recommended_profile": "nvidia-pascal",
+            "status": "ready" if driver == "nvidia" else "attention",
             "devices": [
                 {"vendor_id": "10de", "device_id": "1d01", "driver": driver},
                 {"vendor_id": "10de", "device_id": "1c31", "driver": driver},
+            ],
+        }
+        self.detector.write_text(
+            "#!/usr/bin/env bash\n"
+            + "printf '%s\\n' "
+            + repr(json.dumps(value))
+            + "\n"
+        )
+        self.detector.chmod(self.detector.stat().st_mode | stat.S_IXUSR)
+
+    def write_system_default_detector(self, driver: str | None) -> None:
+        value = {
+            "recommended_profile": "system-default",
+            "status": "ready" if driver else "attention",
+            "devices": [
+                {"vendor_id": "1002", "device_id": "9999", "driver": driver}
             ],
         }
         self.detector.write_text(
@@ -176,6 +204,7 @@ class DisplayPreflightTests(unittest.TestCase):
     def test_unknown_nvidia_profile_blocks_graphical_startup(self) -> None:
         value = {
             "recommended_profile": "manual",
+            "status": "attention",
             "devices": [
                 {"vendor_id": "10de", "device_id": "9999", "driver": "nouveau"}
             ],
@@ -191,6 +220,13 @@ class DisplayPreflightTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         report = json.loads((self.root / "report.json").read_text())
         self.assertEqual(report["reason"], "gpu_profile_requires_manual_selection")
+
+    def test_unbound_system_default_blocks_graphical_startup(self) -> None:
+        self.write_system_default_detector(None)
+        result = self.run_preflight("6.18.49-2-lts")
+        self.assertNotEqual(result.returncode, 0)
+        report = json.loads((self.root / "report.json").read_text())
+        self.assertEqual(report["reason"], "gpu_driver_binding_incomplete")
 
 
 if __name__ == "__main__":
