@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly DETECTOR="${ARK_GPU_DETECTOR:-/usr/local/sbin/ark-gpu-detect}"
+readonly READY_MARKER="${ARK_DISPLAY_READY_MARKER:-/run/ark-display/ready}"
+readonly REPORT_FILE="${ARK_DISPLAY_REPORT_FILE:-/run/ark-display/preflight.json}"
+readonly RUNNING_KERNEL="${ARK_RUNNING_KERNEL:-$(uname -r)}"
+readonly INITRAMFS_IMAGE="${ARK_INITRAMFS_IMAGE:-/boot/initramfs-linux-lts.img}"
+
+fail(){
+  local reason="$1"
+  install -d -m0755 "$(dirname "$REPORT_FILE")"
+  jq -n --arg status blocked --arg reason "$reason" \
+    --arg kernel "$RUNNING_KERNEL" \
+    '{status:$status,reason:$reason,kernel:$kernel}' > "$REPORT_FILE"
+  rm -f "$READY_MARKER"
+  printf 'ARK_DISPLAY_PREFLIGHT=BLOCKED reason=%s\n' "$reason" >&2
+  return 1
+}
+
+ready(){
+  local mode="$1"
+  install -d -m0755 "$(dirname "$REPORT_FILE")"
+  jq -n --arg status ready --arg mode "$mode" --arg kernel "$RUNNING_KERNEL" \
+    '{status:$status,mode:$mode,kernel:$kernel}' > "$REPORT_FILE"
+  : > "$READY_MARKER"
+  printf 'ARK_DISPLAY_PREFLIGHT=PASS mode=%s\n' "$mode"
+}
+
+[[ -x "$DETECTOR" ]] || fail "gpu_detector_missing"
+report="$($DETECTOR)" || fail "gpu_inventory_failed"
+profile="$(jq -er '.recommended_profile' <<<"$report")" || fail "gpu_profile_missing"
+inventory_status="$(jq -er '.status' <<<"$report")" || fail "gpu_status_missing"
+display_count="$(jq '[.devices[]] | length' <<<"$report")"
+(( display_count > 0 )) || fail "no_display_device_detected"
+
+[[ "$profile" != manual ]] || fail "gpu_profile_requires_manual_selection"
+
+if [[ "$profile" != nvidia-pascal ]]; then
+  [[ "$inventory_status" == ready ]] || fail "gpu_driver_binding_incomplete"
+  ready "$profile"
+  exit 0
+fi
+
+nvidia_count="$(jq '[.devices[] | select(.vendor_id == "10de")] | length' <<<"$report")"
+proprietary_count="$(jq '[.devices[] | select(.vendor_id == "10de" and .driver == "nvidia")] | length' <<<"$report")"
+nouveau_count="$(jq '[.devices[] | select(.vendor_id == "10de" and .driver == "nouveau")] | length' <<<"$report")"
+
+if (( nvidia_count > 0 && proprietary_count == nvidia_count )); then
+  ready nvidia-proprietary
+  exit 0
+fi
+
+if (( nvidia_count == 0 || nouveau_count != nvidia_count )); then
+  fail "pascal_driver_binding_incomplete"
+fi
+
+[[ "$RUNNING_KERNEL" == *-lts ]] || fail "pascal_nouveau_requires_lts_kernel"
+[[ -s "$INITRAMFS_IMAGE" ]] || fail "lts_initramfs_missing"
+lsinitcpio "$INITRAMFS_IMAGE" | grep -Eq '/nouveau\.ko(\.(gz|xz|zst))?$' || \
+  fail "nouveau_missing_from_lts_initramfs"
+
+ready nouveau-lts-display

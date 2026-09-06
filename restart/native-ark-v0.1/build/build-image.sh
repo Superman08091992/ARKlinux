@@ -8,6 +8,9 @@ COMPRESSED="$IMG.zst"
 OVERLAY="${ARK_RUNTIME_OVERLAY:-/ark-runtime-overlay/ark-runtime-overlay.tar.zst}"
 SIZE_GIB="${ARKLINUX_IMAGE_SIZE_GIB:-24}"
 SWAP_GIB="${ARKLINUX_SWAP_GIB:-4}"
+KERNEL_IMAGE=/vmlinuz-linux-lts
+INITRAMFS_IMAGE=/initramfs-linux-lts.img
+INITRAMFS_FALLBACK=/initramfs-linux-lts-fallback.img
 MNT="$WORK/mnt"
 LOOP=""
 ESP_DEV=""
@@ -132,7 +135,7 @@ cp -a --no-preserve=ownership "$RELROOT/rootfs/." "$MNT/"
 tar --zstd --no-same-owner -xf "$OVERLAY" -C "$MNT"
 chown root:root "$MNT" "$MNT/etc" "$MNT/usr" "$MNT/usr/lib" "$MNT/opt" "$MNT/ark"
 chmod 0755 "$MNT" "$MNT/etc" "$MNT/usr" "$MNT/usr/lib" "$MNT/opt" "$MNT/ark"
-chmod 0755 "$MNT/usr/local/bin/ark-session" "$MNT/usr/local/bin/ark-bootstrap-ai" "$MNT/usr/local/sbin/ark-firstboot" "$MNT/usr/local/sbin/ark-embedding-model" "$MNT/usr/local/sbin/ark-boot-proof" "$MNT/usr/lib/ark-display/adapter.py"
+chmod 0755 "$MNT/usr/local/bin/ark-session" "$MNT/usr/local/bin/ark-bootstrap-ai" "$MNT/usr/local/sbin/ark-firstboot" "$MNT/usr/local/sbin/ark-embedding-model" "$MNT/usr/local/sbin/ark-boot-proof" "$MNT/usr/local/sbin/ark-gpu-detect" "$MNT/usr/local/sbin/ark-gpu-install" "$MNT/usr/local/sbin/ark-display-preflight" "$MNT/usr/lib/ark-display/adapter.py"
 printf 'ARKlinux\n' > "$MNT/etc/hostname"; printf 'LANG=en_US.UTF-8\n' > "$MNT/etc/locale.conf"; sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' "$MNT/etc/locale.gen"; ln -sf /usr/share/zoneinfo/America/Los_Angeles "$MNT/etc/localtime"
 
 stage "validate root filesystem trust boundary"
@@ -148,6 +151,34 @@ if find "$MNT/etc" "$MNT/usr" "$MNT/opt" "$MNT/ark" -uid 1000 -print -quit | gre
   find "$MNT/etc" "$MNT/usr" "$MNT/opt" "$MNT/ark" -uid 1000 -print | head -50 >&2
   exit 1
 fi
+
+stage "validate package manager recovery contract"
+for path in /etc/pacman.conf /etc/pacman.d/mirrorlist; do
+  [[ -s "$MNT$path" ]] || {
+    echo "ERROR: release image is missing package manager configuration: $path" >&2
+    exit 1
+  }
+done
+for path in /usr/bin/pacman /usr/bin/pacman-conf /usr/bin/pacman-key; do
+  [[ -x "$MNT$path" ]] || {
+    echo "ERROR: release image is missing package manager command: $path" >&2
+    exit 1
+  }
+done
+arch-chroot "$MNT" /bin/bash -lc '
+  test -d /var/lib/pacman/local
+  find /var/lib/pacman/local -mindepth 1 -maxdepth 1 -type d -print -quit | grep -q .
+  pacman -Q pacman archlinux-keyring >/dev/null
+  repo_list="$(pacman-conf --repo-list)"
+  grep -qx core <<<"$repo_list"
+  grep -qx extra <<<"$repo_list"
+'
+# Package presence is not sufficient: initialize the image-local trust root,
+# import Arch's packaged keys and owner-trust values, then calculate the trust
+# database that Pacman will use after installation.
+arch-chroot "$MNT" pacman-key --init
+arch-chroot "$MNT" pacman-key --populate archlinux
+arch-chroot "$MNT" pacman-key --updatedb
 
 stage "generate locale"
 arch-chroot "$MNT" locale-gen
@@ -206,22 +237,33 @@ editor no
 EOF
 cat > "$MNT/boot/loader/entries/arklinux.conf" <<EOF
 title ARKlinux Native v0.1
-linux /vmlinuz-linux
-initrd /initramfs-linux.img
+linux $KERNEL_IMAGE
+initrd $INITRAMFS_IMAGE
 options root=UUID=$ROOTUUID rootflags=subvol=@ark rw quiet audit=1 console=tty0 console=ttyS0,115200n8
 EOF
 cat > "$MNT/boot/loader/entries/arklinux-fallback.conf" <<EOF
 title ARKlinux Native v0.1 (fallback)
-linux /vmlinuz-linux
-initrd /initramfs-linux-fallback.img
+linux $KERNEL_IMAGE
+initrd $INITRAMFS_FALLBACK
 options root=UUID=$ROOTUUID rootflags=subvol=@ark rw audit=1 console=tty0 console=ttyS0,115200n8
 EOF
 
-stage "regenerate initramfs"
+stage "regenerate portable initramfs"
 arch-chroot "$MNT" mkinitcpio -P
+# A release image must not inherit the build host's autodetect whitelist. The
+# fallback image skips autodetect, so use that complete module set for the first
+# native boot. Normal kernel upgrades on the installed workstation regenerate
+# the default image against the real hardware.
+test -s "$MNT/boot${INITRAMFS_FALLBACK}"
+cp "$MNT/boot${INITRAMFS_FALLBACK}" "$MNT/boot${INITRAMFS_IMAGE}"
+arch-chroot "$MNT" /bin/bash -lc \
+  "lsinitcpio '/boot$INITRAMFS_IMAGE' | grep -Eq '/nouveau\\.ko(\\.(gz|xz|zst))?$'"
 
 stage "enable native services"
-arch-chroot "$MNT" systemctl enable NetworkManager.service nftables.service chronyd.service greetd.service ollama.service ark-embedding-model.service ark-firstboot.service ark.target ark-display-adapter.service ark-boot-proof.service
+arch-chroot "$MNT" systemctl enable NetworkManager.service nftables.service chronyd.service greetd.service ollama.service ark-embedding-model.service ark-firstboot.service ark.target ark-display-adapter.service ark-boot-proof.service ark-gpu-report.service ark-display-preflight.service
+# Keep ttyS0 as a write-only CI/emergency console without letting the generated
+# serial getty restart forever on workstations that have no usable serial port.
+arch-chroot "$MNT" systemctl mask serial-getty@ttyS0.service
 arch-chroot "$MNT" systemctl set-default graphical.target
 
 stage "validate native A.R.K. contract"
@@ -229,11 +271,13 @@ arch-chroot "$MNT" /bin/bash -lc 'test "$(stat -c "%U:%G:%a" /)" = root:root:755
 arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -f /ark/pair_mvp/pipeline.py && test -f /ark/pair_mvp/alatheia.py && test -f /etc/ark/ARK_GENESIS_COMMIT && test -f /etc/ark/ALATHEIA_COMMIT && ! test -e /opt/ark && ! test -L /opt/ark'
 arch-chroot "$MNT" /bin/bash -lc 'for path in /ark/logs /ark/bus /var/log/ark; do test -d "$path" && test "$(stat -c "%U:%G:%a" "$path")" = arkd:ark-state:770 || exit 1; done'
 arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service'
-arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service'
+arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service /etc/systemd/system/ark-gpu-report.service /etc/systemd/system/ark-display-preflight.service'
+arch-chroot "$MNT" /bin/bash -lc 'test -f /etc/pam.d/greetd && grep -q "pam_env.so conffile=/etc/greetd/greetd-pam-env.conf" /etc/pam.d/greetd && test -f /etc/systemd/system/greetd.service.d/10-arklinux-vt.conf'
+arch-chroot "$MNT" /bin/bash -lc 'grep -q "^OnFailure=getty@tty1.service$" /etc/systemd/system/ark-display-preflight.service && test "$(readlink /etc/systemd/system/serial-getty@ttyS0.service)" = /dev/null'
+arch-chroot "$MNT" /bin/bash -lc 'pacman -Q linux-lts linux-lts-headers mesa libdrm plasma-pa xdg-desktop-portal-kde rtkit >/dev/null'
 
 stage "collect image evidence"
 mkdir -p "$OUT/evidence"; cp "$RELROOT/config/subvolumes.tsv" "$OUT/evidence/subvolumes.tsv"; cp "$RELROOT/config/packages.x86_64" "$OUT/evidence/packages.requested"; cp "$RELROOT/config/dependencies.md" "$OUT/evidence/dependencies.md"; cp "$MNT/etc/fstab" "$OUT/evidence/fstab"; pacman --root "$MNT" --config /etc/pacman.conf -Q > "$OUT/evidence/packages.installed"; btrfs subvolume list "$MNT" > "$OUT/evidence/btrfs-subvolumes.txt"; findmnt -R "$MNT" > "$OUT/evidence/mount-tree.txt"; cp "$MNT/etc/ark/ARK_GENESIS_COMMIT" "$OUT/evidence/ARK_GENESIS_COMMIT"; cp "$MNT/etc/ark/ALATHEIA_COMMIT" "$OUT/evidence/ALATHEIA_COMMIT"; sha256sum "$OVERLAY" > "$OUT/evidence/ARK_RUNTIME_OVERLAY_SHA256"
 
 stage "finalize and compress image"
 sync; cleanup; LOOP=""; KPARTX_ACTIVE=0; (cd "$OUT" && sha256sum "$(basename "$IMG")" > RAW-SHA256SUMS); zstd -19 -T0 --rm "$IMG" -o "$COMPRESSED"; (cd "$OUT" && sha256sum "$(basename "$COMPRESSED")" > SHA256SUMS); printf 'ARKlinux native release image: %s\n' "$COMPRESSED"
-

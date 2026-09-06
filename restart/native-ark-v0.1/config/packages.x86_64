@@ -1,8 +1,15 @@
 base
 base-devel
-linux
-linux-headers
+pacman
+archlinux-keyring
+linux-lts
+linux-lts-headers
 linux-firmware
+dkms
+mesa
+libdrm
+vulkan-icd-loader
+vulkan-tools
 btrfs-progs
 snapper
 dosfstools
@@ -42,6 +49,9 @@ ollama
 plasma-desktop
 plasma-workspace
 kwin
+plasma-pa
+xdg-desktop-portal
+xdg-desktop-portal-kde
 qt6-base
 qt6-declarative
 qt6-wayland
@@ -71,6 +81,7 @@ pipewire-alsa
 pipewire-pulse
 pipewire-jack
 wireplumber
+rtkit
 alsa-utils
 gstreamer
 gst-plugins-base
