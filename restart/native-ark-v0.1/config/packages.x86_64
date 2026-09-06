@@ -3,6 +3,11 @@ base-devel
 linux
 linux-headers
 linux-firmware
+dkms
+mesa
+libdrm
+vulkan-icd-loader
+vulkan-tools
 btrfs-progs
 snapper
 dosfstools

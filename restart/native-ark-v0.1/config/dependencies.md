@@ -16,16 +16,40 @@ This file separates host/OS packages from isolated Python/model dependencies. AI
 - cmake, ninja, clang, llvm, rust
 - python, python-pip, python-setuptools, python-wheel, python-virtualenv
 
-## 2. Hardware, GPU and CUDA — pacman / optional hardware profile
+## 2. Hardware, GPU and CUDA — detected hardware profile
 
-- nvidia-open, nvidia-utils, nvidia-settings
-- cuda, cudnn
+- `ark-gpu-detect` inventories display-class PCI devices and records the active kernel binding
+- `nvidia-pascal`: pinned proprietary `nvidia-580xx-dkms`, `nvidia-580xx-utils`, and `opencl-nvidia-580xx`
+- `nvidia-open`: nvidia-open, nvidia-utils, nvidia-settings (Turing or newer only)
+- system-default: mesa, libdrm, vulkan-icd-loader, vulkan-tools
+- cuda, cudnn (not installed for Pascal; CUDA 13 removed compute capability 6.1 support)
 - nvidia-container-toolkit
 - vulkan-icd-loader, vulkan-tools
 - mesa
 - lm_sensors, pciutils, usbutils, smartmontools, nvme-cli
 
-NVIDIA packages are an optional release profile and should only be activated for compatible hardware.
+The native HP Z4 inventory contains `10de:1d01` (GT 1030) and `10de:1c31`
+(Quadro P2200). Both are Pascal. The open kernel modules are incompatible with
+them, so the automatic profile selects proprietary R580. Unknown or mixed
+NVIDIA generations require an explicit profile and do not trigger package
+changes.
+
+The R580 package recipe is locked to one immutable AUR commit and verifies the
+NVIDIA runfile SHA-256 before building as the unprivileged `nobody` account.
+Installation is an explicit administrator action:
+
+```bash
+sudo ark-gpu-install auto
+sudo reboot
+sudo ark-gpu-detect --verify
+nvidia-smi
+```
+
+`ark-bootstrap-ai auto` uses the same selection. On Pascal it installs the
+R580 driver, leaves Ollama on its CPU runtime, and installs the pinned PyTorch
+2.7.1 CUDA 12.6 wheel that remains usable on compute capability 6.1. It does
+not install CUDA 13 or vLLM; those current compute paths no longer support the
+two Pascal cards.
 
 ## 3. Desktop/compositor/toolkits — pacman
 
@@ -68,7 +92,7 @@ NVIDIA packages are an optional release profile and should only be activated for
 - `ollama` is part of the native base image and is supervised by `ollama.service`
 - `nomic-embed-text:latest` is provisioned by `ark-embedding-model.service`; the exact resolved Ollama digest is recorded before use
 - the real embedding contract is `ark-semantic-v1`, L2-normalized, exactly 768 dimensions
-- ollama-cuda may replace the CPU package when the NVIDIA profile is enabled
+- ollama-cuda may replace the CPU package only for a compatible nvidia-open profile
 - llama.cpp/ggml CUDA capability may be added as a separate package profile
 
 ## 8. Isolated Python AI environment — venv/container only

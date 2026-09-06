@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""Detect display GPUs and select an ARKlinux driver profile without guessing."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+from typing import Any
+
+
+NVIDIA_VENDOR = "10de"
+TARGET_PASCAL_IDS = {
+    "1c31": "NVIDIA Quadro P2200",
+    "1d01": "NVIDIA GeForce GT 1030",
+}
+
+
+def read_hex(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="ascii").strip().lower().removeprefix("0x")
+    except (FileNotFoundError, PermissionError, OSError):
+        return None
+
+
+def read_text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="ascii").strip()
+    except (FileNotFoundError, PermissionError, OSError):
+        return None
+
+
+def driver_name(device: Path) -> str | None:
+    try:
+        return Path(os.readlink(device / "driver")).name
+    except (FileNotFoundError, PermissionError, OSError):
+        return None
+
+
+def lspci_names() -> dict[str, str]:
+    fixture = os.environ.get("ARK_GPU_LSPCI_FILE")
+    try:
+        if fixture:
+            text = Path(fixture).read_text(encoding="utf-8")
+        else:
+            text = subprocess.run(
+                ["lspci", "-Dnn"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            ).stdout
+    except (FileNotFoundError, PermissionError, OSError, subprocess.SubprocessError):
+        return {}
+
+    names: dict[str, str] = {}
+    for line in text.splitlines():
+        match = re.match(r"^(?P<slot>[0-9a-fA-F:.]+)\s+(?P<name>.+)$", line)
+        if match:
+            names[match.group("slot").lower()] = match.group("name").strip()
+    return names
+
+
+def architecture(vendor: str | None, device: str | None, name: str) -> str | None:
+    if vendor != NVIDIA_VENDOR:
+        return None
+    if device in TARGET_PASCAL_IDS:
+        return "pascal"
+    # NVIDIA's Pascal PCI names use the GP10x/GP100 codenames. This expands
+    # detection safely while the two target IDs above remain independently exact.
+    if re.search(r"\bGP(?:100|10[24678])(?:GL|B)?\b", name, re.IGNORECASE):
+        return "pascal"
+    return "unknown"
+
+
+def inventory(sysfs_root: Path) -> list[dict[str, Any]]:
+    names = lspci_names()
+    devices: list[dict[str, Any]] = []
+    pci_root = sysfs_root / "bus" / "pci" / "devices"
+    for entry in sorted(pci_root.glob("*")):
+        pci_class = read_hex(entry / "class")
+        if not pci_class or not pci_class.startswith("03"):
+            continue
+        vendor = read_hex(entry / "vendor")
+        device = read_hex(entry / "device")
+        slot = entry.name.lower()
+        name = names.get(slot, "")
+        if vendor == NVIDIA_VENDOR and device in TARGET_PASCAL_IDS:
+            product = TARGET_PASCAL_IDS[device]
+        elif name:
+            product = name
+        else:
+            product = f"PCI {vendor or 'unknown'}:{device or 'unknown'}"
+        devices.append(
+            {
+                "slot": slot,
+                "vendor_id": vendor,
+                "device_id": device,
+                "pci_id": f"{vendor}:{device}" if vendor and device else None,
+                "product": product,
+                "architecture": architecture(vendor, device, name),
+                "driver": driver_name(entry),
+                "boot_vga": read_text(entry / "boot_vga") == "1",
+            }
+        )
+    return devices
+
+
+def recommended_profile(devices: list[dict[str, Any]]) -> tuple[str, str]:
+    nvidia = [item for item in devices if item["vendor_id"] == NVIDIA_VENDOR]
+    if not nvidia:
+        return "system-default", "No NVIDIA display GPU was detected."
+    architectures = {item["architecture"] for item in nvidia}
+    if architectures == {"pascal"}:
+        return "nvidia-pascal", "All detected NVIDIA GPUs require proprietary R580."
+    if "pascal" in architectures:
+        return "manual", "Pascal is mixed with an unclassified NVIDIA GPU; automatic replacement is unsafe."
+    return "manual", "NVIDIA hardware was detected but its architecture was not proven."
+
+
+def health(devices: list[dict[str, Any]], profile: str) -> tuple[str, list[str]]:
+    concerns: list[str] = []
+    if profile == "nvidia-pascal":
+        for item in devices:
+            if item["vendor_id"] != NVIDIA_VENDOR:
+                continue
+            if item["driver"] != "nvidia":
+                concerns.append(
+                    f"{item['slot']} {item['pci_id']} is bound to "
+                    f"{item['driver'] or 'no driver'}, expected nvidia"
+                )
+    elif profile == "manual":
+        concerns.append("automatic driver selection is intentionally blocked")
+    return ("attention" if concerns else "ready"), concerns
+
+
+def report(sysfs_root: Path) -> dict[str, Any]:
+    devices = inventory(sysfs_root)
+    profile, reason = recommended_profile(devices)
+    status, concerns = health(devices, profile)
+    return {
+        "schema_version": 1,
+        "observed_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "recommended_profile": profile,
+        "reason": reason,
+        "status": status,
+        "concerns": concerns,
+        "devices": devices,
+    }
+
+
+def atomic_write(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--profile", action="store_true", help="print only the recommended profile")
+    parser.add_argument("--verify", action="store_true", help="return nonzero unless the selected driver is active")
+    parser.add_argument("--write", type=Path, help="atomically write the JSON report")
+    args = parser.parse_args()
+
+    sysfs_root = Path(os.environ.get("ARK_GPU_SYSFS_ROOT", "/sys"))
+    value = report(sysfs_root)
+    if args.write:
+        atomic_write(args.write, value)
+    if args.profile:
+        print(value["recommended_profile"])
+    elif not args.write:
+        print(json.dumps(value, indent=2, sort_keys=True))
+    if args.verify and value["status"] != "ready":
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

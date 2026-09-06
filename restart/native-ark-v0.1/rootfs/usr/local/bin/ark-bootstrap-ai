@@ -5,16 +5,36 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
   exec sudo "$0" "$@"
 fi
 
-PROFILE="${1:-nvidia}"
+PROFILE="${1:-auto}"
+if [[ "$PROFILE" == auto || "$PROFILE" == nvidia ]]; then
+  PROFILE="$(/usr/local/sbin/ark-gpu-detect --profile)"
+fi
+
 case "$PROFILE" in
-  nvidia)
-    pacman -Syu --noconfirm --needed nvidia-open nvidia-utils nvidia-settings cuda cudnn nvidia-container-toolkit ollama ollama-cuda uv
+  nvidia-pascal)
+    /usr/local/sbin/ark-gpu-install nvidia-pascal
+    # CUDA 13 and vLLM do not support compute capability 6.1. Keep Ollama on
+    # CPU; the isolated Python environment gets a compatible CUDA 12.6 wheel.
+    pacman -Syu --noconfirm --needed nvidia-container-toolkit ollama uv
+    ;;
+  nvidia-open)
+    /usr/local/sbin/ark-gpu-install nvidia-open
+    pacman -Syu --noconfirm --needed cuda cudnn nvidia-container-toolkit ollama ollama-cuda uv
+    ;;
+  system-default)
+    /usr/local/sbin/ark-gpu-install system-default
+    pacman -Syu --noconfirm --needed ollama uv
     ;;
   cpu)
     pacman -Syu --noconfirm --needed ollama uv
     ;;
+  manual)
+    /usr/local/sbin/ark-gpu-detect >&2
+    echo "GPU architecture is not proven; no driver packages were changed." >&2
+    exit 4
+    ;;
   *)
-    echo "usage: ark-bootstrap-ai [nvidia|cpu]" >&2
+    echo "usage: ark-bootstrap-ai [auto|nvidia-pascal|nvidia-open|system-default|cpu]" >&2
     exit 2
     ;;
 esac
@@ -25,17 +45,33 @@ if [[ ! -x /ark/venvs/ai/bin/python ]]; then
   uv venv --python 3.12 /ark/venvs/ai
 fi
 
+case "$PROFILE" in
+  nvidia-pascal)
+    # shellcheck disable=SC1091
+    source /usr/lib/ark-gpu/nvidia-pascal.lock
+    uv pip install --python /ark/venvs/ai/bin/python \
+      --index-url "$NVIDIA_PASCAL_TORCH_INDEX" \
+      "torch==$NVIDIA_PASCAL_TORCH_VERSION" || {
+        echo "R580 is installed, but the pinned CUDA 12.6 PyTorch wheel could not be installed." >&2
+        exit 3
+      }
+    ;;
+  nvidia-open)
+    uv pip install --python /ark/venvs/ai/bin/python torch triton vllm nvidia-nccl-cu12 || {
+      echo "Core NVIDIA packages installed, but one or more Python GPU wheels were unavailable for this hardware/runtime combination." >&2
+      exit 3
+    }
+    ;;
+  system-default|cpu)
+    uv pip install --python /ark/venvs/ai/bin/python \
+      --index-url https://download.pytorch.org/whl/cpu torch
+    ;;
+esac
+
 uv pip install --python /ark/venvs/ai/bin/python \
   fastapi uvicorn pydantic accelerate transformers safetensors tokenizers \
   sentence-transformers httpx websockets psutil numpy scipy pandas \
   requests beautifulsoup4 lxml selenium playwright aiohttp tenacity python-dateutil
-
-if [[ "$PROFILE" == "nvidia" ]]; then
-  uv pip install --python /ark/venvs/ai/bin/python torch triton vllm nvidia-nccl-cu12 || {
-    echo "Core NVIDIA packages installed, but one or more Python GPU wheels were unavailable for this hardware/runtime combination." >&2
-    exit 3
-  }
-fi
 
 /ark/venvs/ai/bin/python -m playwright install chromium
 printf 'AI profile %s installed under /ark/venvs/ai\n' "$PROFILE"
