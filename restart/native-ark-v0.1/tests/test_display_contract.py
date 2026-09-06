@@ -81,6 +81,23 @@ class DisplayContractTests(unittest.TestCase):
         self.assertIn("refresh_initramfs", block)
         self.assertIn("verify_built_modules", block)
 
+    def test_pascal_build_uses_one_unprivileged_git_identity(self) -> None:
+        installer = (
+            NATIVE_ROOT / "rootfs/usr/local/sbin/ark-gpu-install"
+        ).read_text()
+        ownership = installer.index('chown nobody:nobody "$build_root"')
+        git_init = installer.index(
+            'run_pascal_builder git -C "$source_dir" init -q'
+        )
+        makepkg = installer.index(
+            'run_pascal_builder makepkg --cleanbuild --clean --force'
+        )
+        self.assertLess(ownership, git_init)
+        self.assertLess(git_init, makepkg)
+        self.assertIn('runuser -u nobody -- env', installer)
+        self.assertNotIn('git config --global', installer)
+        self.assertNotIn('\n  git -C "$source_dir"', installer)
+
     def test_ai_profile_switch_removes_incompatible_pascal_state_transactionally(self) -> None:
         bootstrap = (
             NATIVE_ROOT / "rootfs/usr/local/bin/ark-bootstrap-ai"

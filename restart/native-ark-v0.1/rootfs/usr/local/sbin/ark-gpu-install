@@ -145,20 +145,33 @@ install_pascal(){
   build_home="$build_root/home"
   cleanup_pascal_build(){ rm -rf -- "$build_root"; }
   trap cleanup_pascal_build EXIT
+  chown nobody:nobody "$build_root"
+  chmod 0700 "$build_root"
   install -d -m0755 -o nobody -g nobody "$source_dir" "$build_home"
 
-  git -C "$source_dir" init -q
-  git -C "$source_dir" remote add origin "$NVIDIA_PASCAL_AUR_REPOSITORY"
-  git -C "$source_dir" fetch -q --depth 1 origin "$NVIDIA_PASCAL_AUR_COMMIT"
-  git -C "$source_dir" checkout -q --detach FETCH_HEAD
-  observed_commit="$(git -C "$source_dir" rev-parse HEAD)"
+  run_pascal_builder(){
+    runuser -u nobody -- env \
+      HOME="$build_home" \
+      XDG_CACHE_HOME="$build_home/.cache" \
+      "$@"
+  }
+
+  # Git rejects repositories owned by another account. Keep checkout, source
+  # verification and compilation under the same unprivileged identity instead
+  # of weakening Git's ownership protections with a safe.directory exception.
+  run_pascal_builder git -C "$source_dir" init -q
+  run_pascal_builder git -C "$source_dir" remote add origin \
+    "$NVIDIA_PASCAL_AUR_REPOSITORY"
+  run_pascal_builder git -C "$source_dir" fetch -q --depth 1 origin \
+    "$NVIDIA_PASCAL_AUR_COMMIT"
+  run_pascal_builder git -C "$source_dir" checkout -q --detach FETCH_HEAD
+  observed_commit="$(run_pascal_builder git -C "$source_dir" rev-parse HEAD)"
   [[ "$observed_commit" == "$NVIDIA_PASCAL_AUR_COMMIT" ]] || {
     printf 'ERROR: AUR source commit mismatch\n' >&2
     return 1
   }
-  chown -R nobody:nobody "$build_root"
 
-  srcinfo="$(cd "$source_dir" && runuser -u nobody -- env HOME="$build_home" makepkg --printsrcinfo)"
+  srcinfo="$(cd "$source_dir" && run_pascal_builder makepkg --printsrcinfo)"
   grep -q "^[[:space:]]*pkgbase = nvidia-580xx-utils$" <<<"$srcinfo" || {
     printf 'ERROR: unexpected AUR package base\n' >&2
     return 1
@@ -172,8 +185,8 @@ install_pascal(){
     return 1
   }
 
-  (cd "$source_dir" && runuser -u nobody -- env HOME="$build_home" makepkg --verifysource --noconfirm)
-  (cd "$source_dir" && runuser -u nobody -- env HOME="$build_home" makepkg --cleanbuild --clean --force --noconfirm)
+  (cd "$source_dir" && run_pascal_builder makepkg --verifysource --noconfirm)
+  (cd "$source_dir" && run_pascal_builder makepkg --cleanbuild --clean --force --noconfirm)
 
   declare -A package_paths=()
   while IFS= read -r package_path; do
