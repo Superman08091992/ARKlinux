@@ -81,6 +81,7 @@ sudo restart/native-ark-v0.1/tools/ark-repair-installed-display \
 ## 3. Desktop/compositor/toolkits — pacman
 
 - plasma-desktop, plasma-workspace, kwin
+- nodejs-lts-krypton and the Arch `electron` stable meta-package
 - qt6-base, qt6-declarative, qt6-wayland, qt6-tools
 - qt6-webengine, qt6-webchannel, qt6-websockets
 - xorg-xwayland
@@ -88,6 +89,20 @@ sudo restart/native-ark-v0.1/tools/ark-repair-installed-display \
 - pyside6, python-pyqt6, python-pyqt6-webengine
 - ghostwriter, sonnet
 - thunar, firefox, foot
+
+The embodied desktop is a required image input, not an optional application.
+`config/arklinux-shell.lock` pins the exact ARKlinux-shell commit and the build
+refuses an overlay with a different provenance stamp. At boot,
+`ark-desktop-core.target` requires the native action broker and loopback shell
+server. The shell server does not report ready until both the A.R.K. runtime and
+broker are healthy. Plasma then runs the persistent 3D navigator as a restarting
+user service.
+
+Routine navigation is resolved deterministically, authorized before the UI
+changes, and finalized with a one-use permit. The broker writes action type and
+cryptographic digests to a hash-linked ledger; it does not retain the natural
+language command, URL, query, or completion message. Non-navigation requests go
+to Kyle through the native intake API and retain the agent approval boundary.
 
 ## 4. Accessibility, audio and media — pacman
 

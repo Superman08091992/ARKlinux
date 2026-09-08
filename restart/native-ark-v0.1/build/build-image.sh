@@ -6,11 +6,17 @@ ARK_GENESIS_LOCK="$RELROOT/config/ark-genesis.lock"
 # shellcheck disable=SC1090
 source "$ARK_GENESIS_LOCK"
 [[ "${ARK_GENESIS_COMMIT:-}" =~ ^[0-9a-f]{40}$ ]] || { echo "ERROR: invalid ARK_GENESIS_COMMIT in $ARK_GENESIS_LOCK" >&2; exit 1; }
+ARKLINUX_SHELL_LOCK="$RELROOT/config/arklinux-shell.lock"
+[[ -s "$ARKLINUX_SHELL_LOCK" ]] || { echo "ERROR: missing ARKlinux Shell lock: $ARKLINUX_SHELL_LOCK" >&2; exit 1; }
+# shellcheck disable=SC1090
+source "$ARKLINUX_SHELL_LOCK"
+[[ "${ARKLINUX_SHELL_COMMIT:-}" =~ ^[0-9a-f]{40}$ ]] || { echo "ERROR: invalid ARKLINUX_SHELL_COMMIT in $ARKLINUX_SHELL_LOCK" >&2; exit 1; }
 OUT="${ARKLINUX_OUT:-$RELROOT/out}"
 WORK="${ARKLINUX_WORK:-$RELROOT/.work}"
 IMG="$OUT/arklinux-native-v0.1-x86_64.raw"
 COMPRESSED="$IMG.zst"
 OVERLAY="${ARK_RUNTIME_OVERLAY:-/ark-runtime-overlay/ark-runtime-overlay.tar.zst}"
+SHELL_OVERLAY="${ARK_SHELL_OVERLAY:-/ark-shell-overlay/arklinux-shell-overlay.tar.zst}"
 SIZE_GIB="${ARKLINUX_IMAGE_SIZE_GIB:-24}"
 SWAP_GIB="${ARKLINUX_SWAP_GIB:-4}"
 KERNEL_IMAGE=/vmlinuz-linux-lts
@@ -118,10 +124,12 @@ apply_persistent_ark_layout(){
   arch-chroot "$MNT" install -d -m 0750 -o root -g ark-state /etc/ark /etc/ark/trading
   arch-chroot "$MNT" install -d -m 0770 -o arkd -g ark-state /var/lib/ark
   arch-chroot "$MNT" install -d -m 0770 -o arkd -g ark-state /var/log/ark
+  arch-chroot "$MNT" install -d -m 0750 -o ark-desktop -g ark-state /var/lib/ark/desktop
 }
 
 [[ ${EUID:-$(id -u)} -eq 0 ]] || { echo "ERROR: build-image.sh must run as root" >&2; exit 1; }
 [[ -f "$OVERLAY" ]] || { echo "ERROR: private A.R.K. overlay missing: $OVERLAY" >&2; exit 1; }
+[[ -f "$SHELL_OVERLAY" ]] || { echo "ERROR: critical ARKlinux Shell overlay missing: $SHELL_OVERLAY" >&2; exit 1; }
 stage "prepare raw disk"
 clear_stale_build_state
 rm -rf "$WORK"; mkdir -p "$OUT" "$MNT"; rm -f "$IMG" "$COMPRESSED"
@@ -146,19 +154,27 @@ mkdir -p "$MNT/boot"; mount "$ESP_DEV" "$MNT/boot"
 stage "install Arch package set"
 mapfile -t PKGS < <(grep -vE '^\s*(#|$)' "$RELROOT/config/packages.x86_64"); pacstrap -K "$MNT" "${PKGS[@]}"
 
-stage "install ARKlinux rootfs and private A.R.K. overlay"
+stage "install ARKlinux rootfs, private A.R.K. overlay, and embodied desktop"
 # Host checkout ownership must never become guest filesystem ownership.
 cp -a --no-preserve=ownership "$RELROOT/rootfs/." "$MNT/"
 tar --zstd --no-same-owner -xf "$OVERLAY" -C "$MNT"
+tar --zstd --no-same-owner -xf "$SHELL_OVERLAY" -C "$MNT"
 [[ -s "$MNT/etc/ark/ARK_GENESIS_COMMIT" ]] || { echo "ERROR: runtime overlay has no ARK_GENESIS_COMMIT provenance" >&2; exit 1; }
 OBSERVED_ARK_GENESIS_COMMIT="$(tr -d '[:space:]' < "$MNT/etc/ark/ARK_GENESIS_COMMIT")"
 [[ "$OBSERVED_ARK_GENESIS_COMMIT" == "$ARK_GENESIS_COMMIT" ]] || {
   echo "ERROR: runtime overlay commit $OBSERVED_ARK_GENESIS_COMMIT does not match locked $ARK_GENESIS_COMMIT" >&2
   exit 1
 }
+[[ -s "$MNT/etc/ark/ARKLINUX_SHELL_COMMIT" ]] || { echo "ERROR: shell overlay has no ARKLINUX_SHELL_COMMIT provenance" >&2; exit 1; }
+OBSERVED_ARKLINUX_SHELL_COMMIT="$(tr -d '[:space:]' < "$MNT/etc/ark/ARKLINUX_SHELL_COMMIT")"
+[[ "$OBSERVED_ARKLINUX_SHELL_COMMIT" == "$ARKLINUX_SHELL_COMMIT" ]] || {
+  echo "ERROR: shell overlay commit $OBSERVED_ARKLINUX_SHELL_COMMIT does not match locked $ARKLINUX_SHELL_COMMIT" >&2
+  exit 1
+}
 chown root:root "$MNT" "$MNT/etc" "$MNT/usr" "$MNT/usr/lib" "$MNT/opt" "$MNT/ark"
 chmod 0755 "$MNT" "$MNT/etc" "$MNT/usr" "$MNT/usr/lib" "$MNT/opt" "$MNT/ark"
 chmod 0755 "$MNT/usr/local/bin/ark-session" "$MNT/usr/local/bin/ark-bootstrap-ai" "$MNT/usr/local/sbin/ark-firstboot" "$MNT/usr/local/sbin/ark-embedding-model" "$MNT/usr/local/sbin/ark-model-pull" "$MNT/usr/local/sbin/ark-boot-proof" "$MNT/usr/local/sbin/ark-gpu-detect" "$MNT/usr/local/sbin/ark-gpu-install" "$MNT/usr/local/sbin/ark-display-preflight" "$MNT/usr/lib/ark-display/adapter.py"
+chmod 0755 "$MNT/usr/local/bin/ark-embodied-desktop" "$MNT/usr/local/sbin/ark-desktop-ready" "$MNT/usr/lib/ark-desktop/ui_broker.py"
 printf 'ARKlinux\n' > "$MNT/etc/hostname"; printf 'LANG=en_US.UTF-8\n' > "$MNT/etc/locale.conf"; sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' "$MNT/etc/locale.gen"; ln -sf /usr/share/zoneinfo/America/Los_Angeles "$MNT/etc/localtime"
 
 stage "validate root filesystem trust boundary"
@@ -207,7 +223,7 @@ stage "generate locale"
 arch-chroot "$MNT" locale-gen
 
 stage "apply A.R.K. system users"
-arch-chroot "$MNT" systemd-sysusers /usr/lib/sysusers.d/ark-native.conf
+arch-chroot "$MNT" systemd-sysusers /usr/lib/sysusers.d/ark-native.conf /usr/lib/sysusers.d/ark-desktop.conf
 
 stage "apply native Btrfs mount ownership contract"
 apply_subvolume_mount_contract
@@ -294,7 +310,8 @@ arch-chroot "$MNT" /bin/bash -lc \
   "lsinitcpio '/boot$INITRAMFS_IMAGE' | grep -Eq '/nouveau\\.ko(\\.(gz|xz|zst))?$'"
 
 stage "enable native services"
-arch-chroot "$MNT" systemctl enable NetworkManager.service nftables.service chronyd.service greetd.service ollama.service ark-embedding-model.service ark-firstboot.service ark.target ark-display-adapter.service ark-boot-proof.service ark-gpu-report.service ark-display-preflight.service
+arch-chroot "$MNT" systemctl enable NetworkManager.service nftables.service chronyd.service greetd.service ollama.service ark-embedding-model.service ark-firstboot.service ark.target ark-desktop-core.target ark-ui-broker.service ark-shell-server.service ark-display-adapter.service ark-boot-proof.service ark-gpu-report.service ark-display-preflight.service
+arch-chroot "$MNT" systemctl --global enable ark-embodied-desktop.service
 # Keep ttyS0 as a write-only CI/emergency console without letting the generated
 # serial getty restart forever on workstations that have no usable serial port.
 arch-chroot "$MNT" systemctl mask serial-getty@ttyS0.service
@@ -308,14 +325,18 @@ arch-chroot "$MNT" /bin/bash -lc 'test "$(stat -c "%U:%G:%a" /ark/models/ollama)
 arch-chroot "$MNT" /bin/bash -lc 'for path in /ark/logs /ark/bus /var/log/ark; do test -d "$path" && test "$(stat -c "%U:%G:%a" "$path")" = arkd:ark-state:770 || exit 1; done'
 arch-chroot "$MNT" /bin/bash -lc 'for role in kyle aletheia joey hrm kenny; do mountpoint -q "/ark/agents/$role" && test "$(stat -c "%U:%G:%a" "/ark/agents/$role")" = "ark-$role:ark-agent-audit:750" || exit 1; done'
 arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service && test -f /usr/lib/systemd/system/ark-batch-executor.socket && test -f /usr/lib/systemd/system/ark-batch-executor.service'
-arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/ollama.service /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-batch-executor.socket /usr/lib/systemd/system/ark-batch-executor.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service /etc/systemd/system/ark-gpu-report.service /etc/systemd/system/ark-display-preflight.service'
+arch-chroot "$MNT" /bin/bash -lc 'test -s /usr/lib/arklinux-shell/dist/index.html && test -s /usr/lib/arklinux-shell/build/server.cjs && test -s /usr/lib/arklinux-shell/electron/main.cjs && test -x /usr/lib/ark-desktop/ui_broker.py && test -x /usr/local/bin/ark-embodied-desktop && test -x /usr/local/sbin/ark-desktop-ready && test -f /etc/ark/ARKLINUX_SHELL_COMMIT'
+arch-chroot "$MNT" /bin/bash -lc 'test -f /etc/systemd/system/ark-desktop-core.target && test -f /etc/systemd/system/ark-ui-broker.service && test -f /etc/systemd/system/ark-shell-server.service && test -f /etc/systemd/system/ark.target.d/20-critical-desktop.conf && test -f /etc/systemd/user/ark-embodied-desktop.service'
+arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/ollama.service /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-batch-executor.socket /usr/lib/systemd/system/ark-batch-executor.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-desktop-core.target /etc/systemd/system/ark-ui-broker.service /etc/systemd/system/ark-shell-server.service /etc/systemd/user/ark-embodied-desktop.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service /etc/systemd/system/ark-gpu-report.service /etc/systemd/system/ark-display-preflight.service'
 arch-chroot "$MNT" /bin/bash -lc 'test -f /etc/pam.d/greetd && grep -q "pam_env.so conffile=/etc/greetd/greetd-pam-env.conf" /etc/pam.d/greetd && test -f /etc/systemd/system/greetd.service.d/10-arklinux-vt.conf'
 arch-chroot "$MNT" /bin/bash -lc 'grep -q "^OnFailure=getty@tty1.service$" /etc/systemd/system/ark-display-preflight.service && test "$(readlink /etc/systemd/system/serial-getty@ttyS0.service)" = /dev/null'
-arch-chroot "$MNT" /bin/bash -lc 'pacman -Q linux-lts linux-lts-headers mesa libdrm plasma-pa xdg-desktop-portal-kde rtkit python-cryptography >/dev/null'
+arch-chroot "$MNT" /bin/bash -lc 'pacman -Q linux-lts linux-lts-headers mesa libdrm plasma-pa xdg-desktop-portal-kde rtkit python-cryptography nodejs-lts-krypton electron >/dev/null'
 
 stage "collect image evidence"
 mkdir -p "$OUT/evidence"; cp "$RELROOT/config/subvolumes.tsv" "$OUT/evidence/subvolumes.tsv"; cp "$RELROOT/config/packages.x86_64" "$OUT/evidence/packages.requested"; cp "$RELROOT/config/dependencies.md" "$OUT/evidence/dependencies.md"; cp "$MNT/etc/fstab" "$OUT/evidence/fstab"; pacman --root "$MNT" --config /etc/pacman.conf -Q > "$OUT/evidence/packages.installed"; btrfs subvolume list "$MNT" > "$OUT/evidence/btrfs-subvolumes.txt"; findmnt -R "$MNT" > "$OUT/evidence/mount-tree.txt"; cp "$MNT/etc/ark/ARK_GENESIS_COMMIT" "$OUT/evidence/ARK_GENESIS_COMMIT"; cp "$MNT/etc/ark/ALATHEIA_COMMIT" "$OUT/evidence/ALATHEIA_COMMIT"; sha256sum "$OVERLAY" > "$OUT/evidence/ARK_RUNTIME_OVERLAY_SHA256"
+cp "$MNT/etc/ark/ARKLINUX_SHELL_COMMIT" "$OUT/evidence/ARKLINUX_SHELL_COMMIT"; sha256sum "$SHELL_OVERLAY" > "$OUT/evidence/ARKLINUX_SHELL_OVERLAY_SHA256"
 cp "$ARK_GENESIS_LOCK" "$OUT/evidence/ark-genesis.lock"
+cp "$ARKLINUX_SHELL_LOCK" "$OUT/evidence/arklinux-shell.lock"
 
 stage "finalize and compress image"
 sync; cleanup; LOOP=""; KPARTX_ACTIVE=0; (cd "$OUT" && sha256sum "$(basename "$IMG")" > RAW-SHA256SUMS); zstd -19 -T0 --rm "$IMG" -o "$COMPRESSED"; (cd "$OUT" && sha256sum "$(basename "$COMPRESSED")" > SHA256SUMS); printf 'ARKlinux native release image: %s\n' "$COMPRESSED"

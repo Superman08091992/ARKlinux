@@ -9,6 +9,7 @@ on:
     branches:
       - 'release/native-ark-v0.1'
       - 'fix/pascal-gpu-driver'
+      - 'integration/native-agentic-pascal-v0.1'
     paths:
       - 'restart/native-ark-v0.1/**'
       - '.github/workflows/native-gpu-contract.yml'
@@ -29,13 +30,19 @@ jobs:
             restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-gpu-install \
             restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-display-preflight \
             restart/native-ark-v0.1/rootfs/usr/local/bin/ark-bootstrap-ai \
+            restart/native-ark-v0.1/rootfs/usr/local/bin/ark-embodied-desktop \
+            restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-desktop-ready \
             restart/native-ark-v0.1/build/build-image.sh \
             restart/native-ark-v0.1/tools/ark-repair-installed-display
           shellcheck -S warning \
             restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-gpu-install \
             restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-display-preflight \
             restart/native-ark-v0.1/rootfs/usr/local/bin/ark-bootstrap-ai \
+            restart/native-ark-v0.1/rootfs/usr/local/bin/ark-embodied-desktop \
+            restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-desktop-ready \
             restart/native-ark-v0.1/tools/ark-repair-installed-display
+      - name: Compile critical desktop broker
+        run: python -m py_compile restart/native-ark-v0.1/rootfs/usr/lib/ark-desktop/ui_broker.py
       - name: Run GPU detection tests
         run: python -m unittest discover -s restart/native-ark-v0.1/tests -v
       - name: Validate immutable Pascal source lock
@@ -60,3 +67,11 @@ jobs:
           grep -q 'pam_env.so conffile=/etc/greetd/greetd-pam-env.conf' restart/native-ark-v0.1/rootfs/etc/pam.d/greetd
           grep -q 'Requires=ark-display-preflight.service' restart/native-ark-v0.1/rootfs/etc/systemd/system/greetd.service.d/10-arklinux-vt.conf
           grep -q '^OnFailure=getty@tty1.service$' restart/native-ark-v0.1/rootfs/etc/systemd/system/ark-display-preflight.service
+      - name: Validate pinned embodied desktop contract
+        run: |
+          LOCK=restart/native-ark-v0.1/config/arklinux-shell.lock
+          grep -q '^ARKLINUX_SHELL_REPOSITORY=Superman08091992/ARKlinux-shell$' "$LOCK"
+          grep -Eq '^ARKLINUX_SHELL_COMMIT=[0-9a-f]{40}$' "$LOCK"
+          grep -q '^ARKLINUX_SHELL_BRANCH=integration/native-agentic-pascal-v0.1$' "$LOCK"
+          grep -q 'Requires=ark-desktop-core.target' restart/native-ark-v0.1/rootfs/etc/systemd/system/ark.target.d/20-critical-desktop.conf
+          grep -q 'ARK_SHELL_OVERLAY' restart/native-ark-v0.1/build/build-image.sh

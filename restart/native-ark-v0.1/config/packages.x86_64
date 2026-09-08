@@ -46,6 +46,8 @@ python-pip
 python-setuptools
 python-wheel
 python-virtualenv
+nodejs-lts-krypton
+electron
 ollama
 plasma-desktop
 plasma-workspace
