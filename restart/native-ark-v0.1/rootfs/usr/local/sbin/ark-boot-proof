@@ -62,6 +62,9 @@ printf 'ARK_SOURCE_PROVENANCE_PROBE=PASS ark_genesis=%s alatheia=%s\n' "$ARK_GEN
 for unit in ollama.service ark-embedding-model.service ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service; do
   wait_active "$unit"
 done
+wait_active ark-batch-executor.socket
+[[ -S /run/ark/batch-executor.sock ]] || fail 'missing_batch_executor_socket'
+[[ "$(stat -c '%U:%G:%a' /var/lib/ark/batch-executor/claims)" == 'root:root:700' ]] || fail 'invalid_batch_claim_store'
 
 for role in kyle aletheia joey hrm kenny; do
   domain="/ark/agents/$role"

@@ -25,11 +25,13 @@ def test_boot_proof_requires_keys_and_ledger_permissions():
     assert "invalid_agent_ledger" in proof
     assert "ark-agent-audit:2750" in proof
     assert '"/ark/agent-public-keys/$role/signing-key.json"' in proof
+    assert "ark-batch-executor.socket" in proof
+    assert "invalid_batch_claim_store" in proof
 
 
 def test_image_is_pinned_to_agentic_runtime_commit():
     lock = (ROOT / "config" / "ark-genesis.lock").read_text(encoding="utf-8")
-    assert "ARK_GENESIS_COMMIT=28b4bd284245f8537e686b3e68c605f992b2dda4" in lock
+    assert "ARK_GENESIS_COMMIT=d5a657822ea03bafdcc1d38a29f599db17104da7" in lock
     build = (ROOT / "build" / "build-image.sh").read_text(encoding="utf-8")
     assert "runtime overlay commit" in build
     assert 'cp "$ARK_GENESIS_LOCK" "$OUT/evidence/ark-genesis.lock"' in build

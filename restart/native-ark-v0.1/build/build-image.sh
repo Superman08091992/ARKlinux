@@ -102,6 +102,7 @@ apply_persistent_ark_layout(){
   arch-chroot "$MNT" install -d -m 0770 -o ark-trading -g ark-state /ark/trading
   arch-chroot "$MNT" install -d -m 0711 -o root -g root /ark/agents
   arch-chroot "$MNT" install -d -m 0755 -o root -g root /ark/agent-public-keys
+  arch-chroot "$MNT" install -d -m 0700 -o root -g root /var/lib/ark/batch-executor /var/lib/ark/batch-executor/claims
   local role
   for role in kyle aletheia joey hrm kenny; do
     arch-chroot "$MNT" install -d -m 0750 -o "ark-$role" -g ark-agent-audit "/ark/agents/$role"
@@ -196,6 +197,7 @@ chroot "$MNT" /bin/bash -lc '
   test "$(stat -c "%U:%G:%a" /run/ark/kj)" = ark-kj:ark-kj-ipc:770
   test "$(stat -c "%U:%G:%a" /ark/agents)" = root:root:711
   test "$(stat -c "%U:%G:%a" /ark/agent-public-keys)" = root:root:755
+  test "$(stat -c "%U:%G:%a" /var/lib/ark/batch-executor/claims)" = root:root:700
   for role in kyle aletheia joey hrm kenny; do
     test "$(stat -c "%U:%G:%a" "/ark/agents/$role")" = "ark-$role:ark-agent-audit:750"
     test "$(stat -c "%U:%G:%a" "/ark/agents/$role/ledger")" = "ark-$role:ark-agent-audit:2750"
@@ -256,8 +258,8 @@ arch-chroot "$MNT" /bin/bash -lc 'test "$(stat -c "%U:%G:%a" /)" = root:root:755
 arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -f /ark/pair_mvp/pipeline.py && test -f /ark/pair_mvp/alatheia.py && test -f /etc/ark/ARK_GENESIS_COMMIT && test -f /etc/ark/ALATHEIA_COMMIT && ! test -e /opt/ark && ! test -L /opt/ark'
 arch-chroot "$MNT" /bin/bash -lc 'for path in /ark/logs /ark/bus /var/log/ark; do test -d "$path" && test "$(stat -c "%U:%G:%a" "$path")" = arkd:ark-state:770 || exit 1; done'
 arch-chroot "$MNT" /bin/bash -lc 'for role in kyle aletheia joey hrm kenny; do mountpoint -q "/ark/agents/$role" && test "$(stat -c "%U:%G:%a" "/ark/agents/$role")" = "ark-$role:ark-agent-audit:750" || exit 1; done'
-arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service'
-arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service'
+arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service && test -f /usr/lib/systemd/system/ark-batch-executor.socket && test -f /usr/lib/systemd/system/ark-batch-executor.service'
+arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-batch-executor.socket /usr/lib/systemd/system/ark-batch-executor.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service'
 arch-chroot "$MNT" /bin/bash -lc 'pacman -Q python-cryptography >/dev/null'
 
 stage "collect image evidence"
