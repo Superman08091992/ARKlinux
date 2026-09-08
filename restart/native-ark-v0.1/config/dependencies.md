@@ -117,7 +117,11 @@ sudo restart/native-ark-v0.1/tools/ark-repair-installed-display \
 ## 7. Local inference/model host — pacman / isolated runtime
 
 - `ollama` is part of the native base image and is supervised by `ollama.service`
+- Ollama stores all model blobs under the dedicated `/ark/models/ollama` Btrfs-backed model location
 - `nomic-embed-text:latest` is provisioned by `ark-embedding-model.service`; the exact resolved Ollama digest is recorded before use
+- `/usr/share/ark/model-catalog.json` assigns the optional current-hardware models to agent roles
+- `sudo ark-model-pull` explicitly downloads that bundle and writes a verified inventory; it never runs as a boot-time downloader
+- optional reasoning and vision models are routed as available/on-demand with preload disabled and `keep_alive=0`, so they remain paused outside an active request
 - the real embedding contract is `ark-semantic-v1`, L2-normalized, exactly 768 dimensions
 - ollama-cuda may replace the CPU package only for a compatible nvidia-open profile
 - llama.cpp/ggml CUDA capability may be added as a separate package profile

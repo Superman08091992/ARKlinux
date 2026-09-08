@@ -102,6 +102,8 @@ apply_persistent_ark_layout(){
   arch-chroot "$MNT" install -d -m 0770 -o arkd -g ark-state /ark/memory /ark/evidence /ark/state /ark/checkpoints /ark/quarantine /ark/storage /ark/logs /ark/bus
   arch-chroot "$MNT" install -d -m 0770 -o ark-kj -g ark-state /ark/kj
   arch-chroot "$MNT" install -d -m 0750 -o root -g ark-state /ark/graveyard /ark/models /ark/config
+  arch-chroot "$MNT" usermod -a -G ark-state ollama
+  arch-chroot "$MNT" install -d -m 0750 -o ollama -g ollama /ark/models/ollama
   arch-chroot "$MNT" install -d -m 0770 -o ark-trading -g ark-state /ark/trading
   arch-chroot "$MNT" install -d -m 0711 -o root -g root /ark/agents
   arch-chroot "$MNT" install -d -m 0755 -o root -g root /ark/agent-public-keys
@@ -156,7 +158,7 @@ OBSERVED_ARK_GENESIS_COMMIT="$(tr -d '[:space:]' < "$MNT/etc/ark/ARK_GENESIS_COM
 }
 chown root:root "$MNT" "$MNT/etc" "$MNT/usr" "$MNT/usr/lib" "$MNT/opt" "$MNT/ark"
 chmod 0755 "$MNT" "$MNT/etc" "$MNT/usr" "$MNT/usr/lib" "$MNT/opt" "$MNT/ark"
-chmod 0755 "$MNT/usr/local/bin/ark-session" "$MNT/usr/local/bin/ark-bootstrap-ai" "$MNT/usr/local/sbin/ark-firstboot" "$MNT/usr/local/sbin/ark-embedding-model" "$MNT/usr/local/sbin/ark-boot-proof" "$MNT/usr/local/sbin/ark-gpu-detect" "$MNT/usr/local/sbin/ark-gpu-install" "$MNT/usr/local/sbin/ark-display-preflight" "$MNT/usr/lib/ark-display/adapter.py"
+chmod 0755 "$MNT/usr/local/bin/ark-session" "$MNT/usr/local/bin/ark-bootstrap-ai" "$MNT/usr/local/sbin/ark-firstboot" "$MNT/usr/local/sbin/ark-embedding-model" "$MNT/usr/local/sbin/ark-model-pull" "$MNT/usr/local/sbin/ark-boot-proof" "$MNT/usr/local/sbin/ark-gpu-detect" "$MNT/usr/local/sbin/ark-gpu-install" "$MNT/usr/local/sbin/ark-display-preflight" "$MNT/usr/lib/ark-display/adapter.py"
 printf 'ARKlinux\n' > "$MNT/etc/hostname"; printf 'LANG=en_US.UTF-8\n' > "$MNT/etc/locale.conf"; sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' "$MNT/etc/locale.gen"; ln -sf /usr/share/zoneinfo/America/Los_Angeles "$MNT/etc/localtime"
 
 stage "validate root filesystem trust boundary"
@@ -228,6 +230,9 @@ chroot "$MNT" /bin/bash -lc '
   test "$(stat -c "%U:%G:%a" /run/ark/kj)" = ark-kj:ark-kj-ipc:770
   test "$(stat -c "%U:%G:%a" /ark/agents)" = root:root:711
   test "$(stat -c "%U:%G:%a" /ark/agent-public-keys)" = root:root:755
+  test "$(stat -c "%U:%G:%a" /ark/models)" = root:ark-state:750
+  test "$(stat -c "%U:%G:%a" /ark/models/ollama)" = ollama:ollama:750
+  id -nG ollama | tr " " "\n" | grep -qx ark-state
   test "$(stat -c "%U:%G:%a" /var/lib/ark/batch-executor/claims)" = root:root:700
   for role in kyle aletheia joey hrm kenny; do
     test "$(stat -c "%U:%G:%a" "/ark/agents/$role")" = "ark-$role:ark-agent-audit:750"
@@ -298,10 +303,12 @@ arch-chroot "$MNT" systemctl set-default graphical.target
 stage "validate native A.R.K. contract"
 arch-chroot "$MNT" /bin/bash -lc 'test "$(stat -c "%U:%G:%a" /)" = root:root:755 && test "$(stat -c "%U:%G" /etc)" = root:root && test "$(stat -c "%U:%G" /usr)" = root:root && test "$(stat -c "%U:%G" /usr/lib)" = root:root'
 arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -f /ark/pair_mvp/pipeline.py && test -f /ark/pair_mvp/alatheia.py && test -f /etc/ark/ARK_GENESIS_COMMIT && test -f /etc/ark/ALATHEIA_COMMIT && ! test -e /opt/ark && ! test -L /opt/ark'
+arch-chroot "$MNT" /bin/bash -lc 'test -x /usr/local/sbin/ark-model-pull && test -r /usr/share/ark/model-catalog.json && test -f /etc/systemd/system/ollama.service.d/10-ark-model-store.conf && grep -q "OLLAMA_MODELS=/ark/models/ollama" /etc/systemd/system/ollama.service.d/10-ark-model-store.conf'
+arch-chroot "$MNT" /bin/bash -lc 'test "$(stat -c "%U:%G:%a" /ark/models/ollama)" = ollama:ollama:750 && id -nG ollama | tr " " "\n" | grep -qx ark-state'
 arch-chroot "$MNT" /bin/bash -lc 'for path in /ark/logs /ark/bus /var/log/ark; do test -d "$path" && test "$(stat -c "%U:%G:%a" "$path")" = arkd:ark-state:770 || exit 1; done'
 arch-chroot "$MNT" /bin/bash -lc 'for role in kyle aletheia joey hrm kenny; do mountpoint -q "/ark/agents/$role" && test "$(stat -c "%U:%G:%a" "/ark/agents/$role")" = "ark-$role:ark-agent-audit:750" || exit 1; done'
 arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service && test -f /usr/lib/systemd/system/ark-batch-executor.socket && test -f /usr/lib/systemd/system/ark-batch-executor.service'
-arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-batch-executor.socket /usr/lib/systemd/system/ark-batch-executor.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service /etc/systemd/system/ark-gpu-report.service /etc/systemd/system/ark-display-preflight.service'
+arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/ollama.service /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-batch-executor.socket /usr/lib/systemd/system/ark-batch-executor.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service /etc/systemd/system/ark-gpu-report.service /etc/systemd/system/ark-display-preflight.service'
 arch-chroot "$MNT" /bin/bash -lc 'test -f /etc/pam.d/greetd && grep -q "pam_env.so conffile=/etc/greetd/greetd-pam-env.conf" /etc/pam.d/greetd && test -f /etc/systemd/system/greetd.service.d/10-arklinux-vt.conf'
 arch-chroot "$MNT" /bin/bash -lc 'grep -q "^OnFailure=getty@tty1.service$" /etc/systemd/system/ark-display-preflight.service && test "$(readlink /etc/systemd/system/serial-getty@ttyS0.service)" = /dev/null'
 arch-chroot "$MNT" /bin/bash -lc 'pacman -Q linux-lts linux-lts-headers mesa libdrm plasma-pa xdg-desktop-portal-kde rtkit python-cryptography >/dev/null'

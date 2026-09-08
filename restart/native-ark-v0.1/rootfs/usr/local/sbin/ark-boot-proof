@@ -52,6 +52,40 @@ done
 [[ -f /ark/pair_mvp/pipeline.py && -f /ark/pair_mvp/alatheia.py ]] || fail 'missing:pinned_alatheia_runtime'
 [[ -f /etc/ark/ARK_GENESIS_COMMIT && -f /etc/ark/ALATHEIA_COMMIT ]] || fail 'missing:source_provenance'
 [[ ! -e /opt/ark && ! -L /opt/ark ]] || fail 'obsolete:/opt/ark'
+[[ -x /usr/local/sbin/ark-model-pull ]] || fail 'missing:ark-model-pull'
+[[ -r /usr/share/ark/model-catalog.json ]] || fail 'missing:model-catalog'
+[[ "$(stat -c '%U:%G:%a' /ark/models)" == 'root:ark-state:750' ]] || fail 'invalid:model-root-contract'
+[[ "$(stat -c '%U:%G:%a' /ark/models/ollama)" == 'ollama:ollama:750' ]] || fail 'invalid:ollama-model-store-contract'
+id -nG ollama | tr ' ' '\n' | grep -qx ark-state || fail 'invalid:ollama-model-store-membership'
+
+python - <<'PY' || fail 'invalid:model-catalog-contract'
+import json
+from pathlib import Path
+
+catalog = json.loads(Path('/usr/share/ark/model-catalog.json').read_text(encoding='utf-8'))
+if catalog.get('schema_version') != '1.0':
+    raise SystemExit('unsupported catalog schema')
+if catalog.get('provider') != 'ollama' or catalog.get('storage_path') != '/ark/models/ollama':
+    raise SystemExit('invalid catalog provider or storage path')
+models = {item['name']: item for item in catalog.get('models', [])}
+if not models:
+    raise SystemExit('catalog has no models')
+for name, model in models.items():
+    if (
+        model.get('route_state') != 'available'
+        or model.get('runtime_state') != 'paused'
+        or model.get('activation') != 'on_demand'
+        or model.get('preload') is not False
+        or model.get('keep_alive') != 0
+    ):
+        raise SystemExit(f'model is not paused/on-demand: {name}')
+for role, route in catalog.get('routes', {}).items():
+    if route.get('primary') not in models:
+        raise SystemExit(f'route references unknown primary: {role}')
+    if any(name not in models for name in route.get('alternatives', [])):
+        raise SystemExit(f'route references unknown alternative: {role}')
+print('ARK_MODEL_CATALOG_PROBE=PASS state=available runtime=paused')
+PY
 
 ARK_GENESIS_COMMIT="$(tr -d '\r\n' < /etc/ark/ARK_GENESIS_COMMIT)"
 ALATHEIA_COMMIT="$(tr -d '\r\n' < /etc/ark/ALATHEIA_COMMIT)"
