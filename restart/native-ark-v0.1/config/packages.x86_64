@@ -34,6 +34,7 @@ zstd
 tar
 unzip
 python
+python-cryptography
 python-pip
 python-setuptools
 python-wheel

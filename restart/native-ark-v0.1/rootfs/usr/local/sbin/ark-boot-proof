@@ -44,7 +44,7 @@ for runtime_path in /run/ark /run/ark/agents /run/ark/agents/kyle /run/ark/agent
   }
 done
 
-for mp in / /ark/memory /ark/evidence /ark/state /ark/kj /ark/graveyard /ark/models /ark/checkpoints /ark/quarantine /ark/storage; do
+for mp in / /ark/memory /ark/evidence /ark/state /ark/kj /ark/graveyard /ark/models /ark/checkpoints /ark/quarantine /ark/storage /ark/agents/kyle /ark/agents/aletheia /ark/agents/joey /ark/agents/hrm /ark/agents/kenny; do
   mountpoint -q "$mp" || fail "missing_mount:$mp"
 done
 
@@ -61,6 +61,15 @@ printf 'ARK_SOURCE_PROVENANCE_PROBE=PASS ark_genesis=%s alatheia=%s\n' "$ARK_GEN
 
 for unit in ollama.service ark-embedding-model.service ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service; do
   wait_active "$unit"
+done
+
+for role in kyle aletheia joey hrm kenny; do
+  domain="/ark/agents/$role"
+  [[ "$(stat -c '%U:%G:%a' "$domain")" == "ark-$role:ark-agent-audit:750" ]] || fail "invalid_agent_domain:$role"
+  [[ "$(stat -c '%U:%G:%a' "$domain/ledger")" == "ark-$role:ark-agent-audit:2750" ]] || fail "invalid_agent_ledger:$role"
+  [[ -s "$domain/private/signing-key.pem" ]] || fail "missing_agent_private_key:$role"
+  [[ "$(stat -c '%U:%a' "$domain/private/signing-key.pem")" == "ark-$role:600" ]] || fail "invalid_agent_private_key:$role"
+  [[ -s "$domain/public/signing-key.json" ]] || fail "missing_agent_public_key:$role"
 done
 
 python - <<'PY' || fail 'status_probe_failed'
