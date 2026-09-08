@@ -14,7 +14,7 @@ This file separates host/OS packages from isolated Python/model dependencies. AI
 - git, openssh, rsync, curl, wget
 - jq, ripgrep, fd, zstd, tar, unzip
 - cmake, ninja, clang, llvm, rust
-- python, python-pip, python-setuptools, python-wheel, python-virtualenv
+- python, python-cryptography, python-pip, python-setuptools, python-wheel, python-virtualenv
 
 ## 2. Hardware, GPU and CUDA — detected hardware profile
 
@@ -166,6 +166,9 @@ Playwright browser binaries/system libraries must be installed during image/runt
 These are architecture components rather than third-party packages:
 
 - low-level process supervisor contracts: Kyle, Aletheia, Joey, HRM, Kenny
+- per-agent Btrfs filesystem domains with private Ed25519 signing identities
+- independently signed, hash-linked agent ledgers and an H.R.M. reference-only master ledger
+- one-decision immutable change batches with preflight, postflight, and rollback manifests
 - model router
 - KJ Joey→HRM-accounted→Kenny bridge
 - append-only evidence/event ledger
@@ -185,6 +188,9 @@ These are architecture components rather than third-party packages:
 - Btrfs `@ark` is mounted at `/`.
 - `/ark` is a native top-level ARKlinux system hierarchy.
 - `/run/ark` is volatile IPC/runtime state.
+- `/ark/agents/{kyle,aletheia,joey,hrm,kenny}` are separate persistent
+  role-owned Btrfs subvolumes. H.R.M. can read their audit ledgers but cannot
+  read their private signing keys or write their source records.
 - No legacy installed-root alias is created on new images.
 - KJ is not the event ledger and not the display adapter.
 - The GUI does not connect directly to low-level agent sockets or KJ.
