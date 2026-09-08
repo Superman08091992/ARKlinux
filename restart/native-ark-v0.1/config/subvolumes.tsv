@@ -19,5 +19,10 @@
 @checkpoints	/ark/checkpoints	noatime,compress=zstd:3,nodev,nosuid,noexec	arkd	ark-state	0770	ark-state
 @quarantine	/ark/quarantine	noatime,compress=zstd:3,nodev,nosuid,noexec	arkd	ark-state	0770	ark-state
 @storage	/ark/storage	noatime,compress=zstd:3,nodev,nosuid	arkd	ark-state	0770	ark-state
+@agent-kyle	/ark/agents/kyle	noatime,compress=zstd:3,nodev,nosuid,noexec	ark-kyle	ark-agent-audit	0750	agent-state
+@agent-aletheia	/ark/agents/aletheia	noatime,compress=zstd:3,nodev,nosuid,noexec	ark-aletheia	ark-agent-audit	0750	agent-state
+@agent-joey	/ark/agents/joey	noatime,compress=zstd:3,nodev,nosuid,noexec	ark-joey	ark-agent-audit	0750	agent-state
+@agent-hrm	/ark/agents/hrm	noatime,compress=zstd:1,nodev,nosuid,noexec	ark-hrm	ark-agent-audit	0750	agent-state
+@agent-kenny	/ark/agents/kenny	noatime,compress=zstd:3,nodev,nosuid,noexec	ark-kenny	ark-agent-audit	0750	agent-state
 
 # /run/ark is volatile runtime IPC/state and is intentionally not Btrfs-backed.

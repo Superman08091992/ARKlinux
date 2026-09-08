@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 RELROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ARK_GENESIS_LOCK="$RELROOT/config/ark-genesis.lock"
+[[ -s "$ARK_GENESIS_LOCK" ]] || { echo "ERROR: missing ARK_GENESIS lock: $ARK_GENESIS_LOCK" >&2; exit 1; }
+# shellcheck disable=SC1090
+source "$ARK_GENESIS_LOCK"
+[[ "${ARK_GENESIS_COMMIT:-}" =~ ^[0-9a-f]{40}$ ]] || { echo "ERROR: invalid ARK_GENESIS_COMMIT in $ARK_GENESIS_LOCK" >&2; exit 1; }
 OUT="${ARKLINUX_OUT:-$RELROOT/out}"
 WORK="${ARKLINUX_WORK:-$RELROOT/.work}"
 IMG="$OUT/arklinux-native-v0.1-x86_64.raw"
@@ -95,6 +100,16 @@ apply_persistent_ark_layout(){
   arch-chroot "$MNT" install -d -m 0770 -o ark-kj -g ark-state /ark/kj
   arch-chroot "$MNT" install -d -m 0750 -o root -g ark-state /ark/graveyard /ark/models /ark/config
   arch-chroot "$MNT" install -d -m 0770 -o ark-trading -g ark-state /ark/trading
+  arch-chroot "$MNT" install -d -m 0711 -o root -g root /ark/agents
+  arch-chroot "$MNT" install -d -m 0755 -o root -g root /ark/agent-public-keys
+  arch-chroot "$MNT" install -d -m 0700 -o root -g root /var/lib/ark/batch-executor /var/lib/ark/batch-executor/claims
+  local role
+  for role in kyle aletheia joey hrm kenny; do
+    arch-chroot "$MNT" install -d -m 0750 -o "ark-$role" -g ark-agent-audit "/ark/agents/$role"
+    arch-chroot "$MNT" install -d -m 0750 -o "ark-$role" -g ark-agent-audit "/ark/agents/$role/workspace" "/ark/agents/$role/artifacts" "/ark/agents/$role/proposals"
+    arch-chroot "$MNT" install -d -m 2750 -o "ark-$role" -g ark-agent-audit "/ark/agents/$role/ledger"
+    arch-chroot "$MNT" install -d -m 0755 -o "ark-$role" -g root "/ark/agent-public-keys/$role"
+  done
   arch-chroot "$MNT" install -d -m 0750 -o root -g ark-state /etc/ark /etc/ark/trading
   arch-chroot "$MNT" install -d -m 0770 -o arkd -g ark-state /var/lib/ark
   arch-chroot "$MNT" install -d -m 0770 -o arkd -g ark-state /var/log/ark
@@ -130,6 +145,12 @@ stage "install ARKlinux rootfs and private A.R.K. overlay"
 # Host checkout ownership must never become guest filesystem ownership.
 cp -a --no-preserve=ownership "$RELROOT/rootfs/." "$MNT/"
 tar --zstd --no-same-owner -xf "$OVERLAY" -C "$MNT"
+[[ -s "$MNT/etc/ark/ARK_GENESIS_COMMIT" ]] || { echo "ERROR: runtime overlay has no ARK_GENESIS_COMMIT provenance" >&2; exit 1; }
+OBSERVED_ARK_GENESIS_COMMIT="$(tr -d '[:space:]' < "$MNT/etc/ark/ARK_GENESIS_COMMIT")"
+[[ "$OBSERVED_ARK_GENESIS_COMMIT" == "$ARK_GENESIS_COMMIT" ]] || {
+  echo "ERROR: runtime overlay commit $OBSERVED_ARK_GENESIS_COMMIT does not match locked $ARK_GENESIS_COMMIT" >&2
+  exit 1
+}
 chown root:root "$MNT" "$MNT/etc" "$MNT/usr" "$MNT/usr/lib" "$MNT/opt" "$MNT/ark"
 chmod 0755 "$MNT" "$MNT/etc" "$MNT/usr" "$MNT/usr/lib" "$MNT/opt" "$MNT/ark"
 chmod 0755 "$MNT/usr/local/bin/ark-session" "$MNT/usr/local/bin/ark-bootstrap-ai" "$MNT/usr/local/sbin/ark-firstboot" "$MNT/usr/local/sbin/ark-embedding-model" "$MNT/usr/local/sbin/ark-boot-proof" "$MNT/usr/lib/ark-display/adapter.py"
@@ -174,6 +195,14 @@ chroot "$MNT" /bin/bash -lc '
   test "$(stat -c "%U:%G:%a" /run/ark/agents/hrm)" = root:ark-hrm-ipc:770
   test "$(stat -c "%U:%G:%a" /run/ark/agents/kenny)" = root:ark-kenny-ipc:770
   test "$(stat -c "%U:%G:%a" /run/ark/kj)" = ark-kj:ark-kj-ipc:770
+  test "$(stat -c "%U:%G:%a" /ark/agents)" = root:root:711
+  test "$(stat -c "%U:%G:%a" /ark/agent-public-keys)" = root:root:755
+  test "$(stat -c "%U:%G:%a" /var/lib/ark/batch-executor/claims)" = root:root:700
+  for role in kyle aletheia joey hrm kenny; do
+    test "$(stat -c "%U:%G:%a" "/ark/agents/$role")" = "ark-$role:ark-agent-audit:750"
+    test "$(stat -c "%U:%G:%a" "/ark/agents/$role/ledger")" = "ark-$role:ark-agent-audit:2750"
+    test "$(stat -c "%U:%G:%a" "/ark/agent-public-keys/$role")" = "ark-$role:root:755"
+  done
 '
 rm -rf "$MNT/run/ark"
 [[ ! -e "$MNT/run/ark" ]] || { echo "ERROR: volatile /run/ark leaked into release image" >&2; exit 1; }
@@ -228,12 +257,14 @@ stage "validate native A.R.K. contract"
 arch-chroot "$MNT" /bin/bash -lc 'test "$(stat -c "%U:%G:%a" /)" = root:root:755 && test "$(stat -c "%U:%G" /etc)" = root:root && test "$(stat -c "%U:%G" /usr)" = root:root && test "$(stat -c "%U:%G" /usr/lib)" = root:root'
 arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -f /ark/pair_mvp/pipeline.py && test -f /ark/pair_mvp/alatheia.py && test -f /etc/ark/ARK_GENESIS_COMMIT && test -f /etc/ark/ALATHEIA_COMMIT && ! test -e /opt/ark && ! test -L /opt/ark'
 arch-chroot "$MNT" /bin/bash -lc 'for path in /ark/logs /ark/bus /var/log/ark; do test -d "$path" && test "$(stat -c "%U:%G:%a" "$path")" = arkd:ark-state:770 || exit 1; done'
-arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service'
-arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service'
+arch-chroot "$MNT" /bin/bash -lc 'for role in kyle aletheia joey hrm kenny; do mountpoint -q "/ark/agents/$role" && test "$(stat -c "%U:%G:%a" "/ark/agents/$role")" = "ark-$role:ark-agent-audit:750" || exit 1; done'
+arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service && test -f /usr/lib/systemd/system/ark-batch-executor.socket && test -f /usr/lib/systemd/system/ark-batch-executor.service'
+arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-batch-executor.socket /usr/lib/systemd/system/ark-batch-executor.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service'
+arch-chroot "$MNT" /bin/bash -lc 'pacman -Q python-cryptography >/dev/null'
 
 stage "collect image evidence"
 mkdir -p "$OUT/evidence"; cp "$RELROOT/config/subvolumes.tsv" "$OUT/evidence/subvolumes.tsv"; cp "$RELROOT/config/packages.x86_64" "$OUT/evidence/packages.requested"; cp "$RELROOT/config/dependencies.md" "$OUT/evidence/dependencies.md"; cp "$MNT/etc/fstab" "$OUT/evidence/fstab"; pacman --root "$MNT" --config /etc/pacman.conf -Q > "$OUT/evidence/packages.installed"; btrfs subvolume list "$MNT" > "$OUT/evidence/btrfs-subvolumes.txt"; findmnt -R "$MNT" > "$OUT/evidence/mount-tree.txt"; cp "$MNT/etc/ark/ARK_GENESIS_COMMIT" "$OUT/evidence/ARK_GENESIS_COMMIT"; cp "$MNT/etc/ark/ALATHEIA_COMMIT" "$OUT/evidence/ALATHEIA_COMMIT"; sha256sum "$OVERLAY" > "$OUT/evidence/ARK_RUNTIME_OVERLAY_SHA256"
+cp "$ARK_GENESIS_LOCK" "$OUT/evidence/ark-genesis.lock"
 
 stage "finalize and compress image"
 sync; cleanup; LOOP=""; KPARTX_ACTIVE=0; (cd "$OUT" && sha256sum "$(basename "$IMG")" > RAW-SHA256SUMS); zstd -19 -T0 --rm "$IMG" -o "$COMPRESSED"; (cd "$OUT" && sha256sum "$(basename "$COMPRESSED")" > SHA256SUMS); printf 'ARKlinux native release image: %s\n' "$COMPRESSED"
-
