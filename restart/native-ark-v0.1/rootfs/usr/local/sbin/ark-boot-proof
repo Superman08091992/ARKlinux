@@ -69,7 +69,7 @@ for role in kyle aletheia joey hrm kenny; do
   [[ "$(stat -c '%U:%G:%a' "$domain/ledger")" == "ark-$role:ark-agent-audit:2750" ]] || fail "invalid_agent_ledger:$role"
   [[ -s "$domain/private/signing-key.pem" ]] || fail "missing_agent_private_key:$role"
   [[ "$(stat -c '%U:%a' "$domain/private/signing-key.pem")" == "ark-$role:600" ]] || fail "invalid_agent_private_key:$role"
-  [[ -s "$domain/public/signing-key.json" ]] || fail "missing_agent_public_key:$role"
+  [[ -s "/ark/agent-public-keys/$role/signing-key.json" ]] || fail "missing_agent_public_key:$role"
 done
 
 python - <<'PY' || fail 'status_probe_failed'

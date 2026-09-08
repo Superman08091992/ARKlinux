@@ -101,11 +101,13 @@ apply_persistent_ark_layout(){
   arch-chroot "$MNT" install -d -m 0750 -o root -g ark-state /ark/graveyard /ark/models /ark/config
   arch-chroot "$MNT" install -d -m 0770 -o ark-trading -g ark-state /ark/trading
   arch-chroot "$MNT" install -d -m 0711 -o root -g root /ark/agents
+  arch-chroot "$MNT" install -d -m 0755 -o root -g root /ark/agent-public-keys
   local role
   for role in kyle aletheia joey hrm kenny; do
     arch-chroot "$MNT" install -d -m 0750 -o "ark-$role" -g ark-agent-audit "/ark/agents/$role"
     arch-chroot "$MNT" install -d -m 0750 -o "ark-$role" -g ark-agent-audit "/ark/agents/$role/workspace" "/ark/agents/$role/artifacts" "/ark/agents/$role/proposals"
     arch-chroot "$MNT" install -d -m 2750 -o "ark-$role" -g ark-agent-audit "/ark/agents/$role/ledger"
+    arch-chroot "$MNT" install -d -m 0755 -o "ark-$role" -g root "/ark/agent-public-keys/$role"
   done
   arch-chroot "$MNT" install -d -m 0750 -o root -g ark-state /etc/ark /etc/ark/trading
   arch-chroot "$MNT" install -d -m 0770 -o arkd -g ark-state /var/lib/ark
@@ -193,9 +195,11 @@ chroot "$MNT" /bin/bash -lc '
   test "$(stat -c "%U:%G:%a" /run/ark/agents/kenny)" = root:ark-kenny-ipc:770
   test "$(stat -c "%U:%G:%a" /run/ark/kj)" = ark-kj:ark-kj-ipc:770
   test "$(stat -c "%U:%G:%a" /ark/agents)" = root:root:711
+  test "$(stat -c "%U:%G:%a" /ark/agent-public-keys)" = root:root:755
   for role in kyle aletheia joey hrm kenny; do
     test "$(stat -c "%U:%G:%a" "/ark/agents/$role")" = "ark-$role:ark-agent-audit:750"
     test "$(stat -c "%U:%G:%a" "/ark/agents/$role/ledger")" = "ark-$role:ark-agent-audit:2750"
+    test "$(stat -c "%U:%G:%a" "/ark/agent-public-keys/$role")" = "ark-$role:root:755"
   done
 '
 rm -rf "$MNT/run/ark"
