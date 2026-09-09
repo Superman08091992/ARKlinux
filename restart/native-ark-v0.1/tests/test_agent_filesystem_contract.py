@@ -31,7 +31,7 @@ def test_boot_proof_requires_keys_and_ledger_permissions():
 
 def test_image_is_pinned_to_agentic_runtime_commit():
     lock = (ROOT / "config" / "ark-genesis.lock").read_text(encoding="utf-8")
-    assert "ARK_GENESIS_COMMIT=e8035f78252e3714ec8d141064154608357ea8da" in lock
+    assert "ARK_GENESIS_COMMIT=f2c3ebe4b9092be8f89ea33cf9a6d297d23eedfc" in lock
     build = (ROOT / "build" / "build-image.sh").read_text(encoding="utf-8")
     assert "runtime overlay commit" in build
     assert "test -x /usr/bin/ark-agentic-model-proof" in build
