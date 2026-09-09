@@ -319,7 +319,7 @@ arch-chroot "$MNT" systemctl set-default graphical.target
 
 stage "validate native A.R.K. contract"
 arch-chroot "$MNT" /bin/bash -lc 'test "$(stat -c "%U:%G:%a" /)" = root:root:755 && test "$(stat -c "%U:%G" /etc)" = root:root && test "$(stat -c "%U:%G" /usr)" = root:root && test "$(stat -c "%U:%G" /usr/lib)" = root:root'
-arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -f /ark/pair_mvp/pipeline.py && test -f /ark/pair_mvp/alatheia.py && test -f /etc/ark/ARK_GENESIS_COMMIT && test -f /etc/ark/ALATHEIA_COMMIT && ! test -e /opt/ark && ! test -L /opt/ark'
+arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -f /ark/pair_mvp/pipeline.py && test -f /ark/pair_mvp/alatheia.py && test -x /usr/bin/ark-agentic-model-proof && test -f /etc/ark/ARK_GENESIS_COMMIT && test -f /etc/ark/ALATHEIA_COMMIT && ! test -e /opt/ark && ! test -L /opt/ark'
 arch-chroot "$MNT" /bin/bash -lc 'test -x /usr/local/sbin/ark-model-pull && test -r /usr/share/ark/model-catalog.json && test -f /etc/systemd/system/ollama.service.d/10-ark-model-store.conf && grep -q "OLLAMA_MODELS=/ark/models/ollama" /etc/systemd/system/ollama.service.d/10-ark-model-store.conf'
 arch-chroot "$MNT" /bin/bash -lc 'test "$(stat -c "%U:%G:%a" /ark/models/ollama)" = ollama:ollama:750 && id -nG ollama | tr " " "\n" | grep -qx ark-state'
 arch-chroot "$MNT" /bin/bash -lc 'for path in /ark/logs /ark/bus /var/log/ark; do test -d "$path" && test "$(stat -c "%U:%G:%a" "$path")" = arkd:ark-state:770 || exit 1; done'
