@@ -31,6 +31,7 @@ file_permissions=(
   ["/ark/aletheia/audit"]="973:973:750"
   ["/ark/aletheia/manifests"]="973:973:750"
   ["/usr/local/bin/ark-install"]="0:0:755"
+  ["/usr/local/bin/ark-install-external"]="0:0:755"
   ["/usr/local/bin/ark-verify-perms"]="0:0:755"
   ["/usr/local/bin/ark-core"]="0:0:755"
   ["/usr/local/bin/ark-watchdog"]="0:0:755"
