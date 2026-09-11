@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# ark-install-external — guarded wrapper for installing ARKlinux onto removable/external media.
+# The underlying ark-install remains the canonical partition/filesystem installer.
+
+set -euo pipefail
+IFS=$'\n\t'
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ark-install-external /dev/sdX
+  ark-install-external /dev/nvmeXnY
+
+This command is intentionally interactive. It will erase the selected disk.
+It refuses mounted targets and targets that do not appear removable,
+hot-pluggable, USB, or Thunderbolt-attached.
+EOF
+}
+
+die() { printf '[ark-install-external] ERROR: %s\n' "$*" >&2; exit 1; }
+info() { printf '[ark-install-external] %s\n' "$*"; }
+
+[[ $# -eq 1 ]] || { usage; exit 2; }
+TARGET="$1"
+[[ "$TARGET" == /dev/* ]] || die "target must be a /dev block device"
+[[ $EUID -eq 0 ]] || die "must run as root"
+[[ -b "$TARGET" ]] || die "not a block device: $TARGET"
+[[ "$(lsblk -dn -o TYPE "$TARGET" 2>/dev/null)" == "disk" ]] || die "target must be a whole disk, not a partition: $TARGET"
+command -v ark-install >/dev/null 2>&1 || die "ark-install is not available in this environment"
+
+MODEL="$(lsblk -dn -o MODEL "$TARGET" 2>/dev/null | sed 's/[[:space:]]*$//' || true)"
+SERIAL="$(lsblk -dn -o SERIAL "$TARGET" 2>/dev/null | sed 's/[[:space:]]*$//' || true)"
+SIZE="$(lsblk -dn -o SIZE "$TARGET" 2>/dev/null | sed 's/[[:space:]]*$//' || true)"
+TRAN="$(lsblk -dn -o TRAN "$TARGET" 2>/dev/null | tr '[:upper:]' '[:lower:]' | sed 's/[[:space:]]*$//' || true)"
+RM="$(lsblk -dn -o RM "$TARGET" 2>/dev/null | tr -d '[:space:]' || true)"
+HOTPLUG="$(lsblk -dn -o HOTPLUG "$TARGET" 2>/dev/null | tr -d '[:space:]' || true)"
+
+# Refuse any target or child partition that is mounted. This also protects most
+# attempts to select the currently booted live-media device.
+if lsblk -nrpo MOUNTPOINT "$TARGET" 2>/dev/null | grep -qE '^/'; then
+  die "target or one of its partitions is mounted; unmount it and re-check device identity"
+fi
+
+case "$TRAN" in
+  usb|thunderbolt) EXTERNAL=true ;;
+  *)
+    if [[ "$RM" == "1" || "$HOTPLUG" == "1" ]]; then
+      EXTERNAL=true
+    else
+      EXTERNAL=false
+    fi
+    ;;
+esac
+[[ "$EXTERNAL" == "true" ]] || die "device does not identify as external/removable (TRAN=${TRAN:-unknown}, RM=${RM:-unknown}, HOTPLUG=${HOTPLUG:-unknown}); use ark-install directly only after independently verifying the intended disk"
+
+info "Selected external target:"
+printf '  Device:    %s\n' "$TARGET"
+printf '  Model:     %s\n' "${MODEL:-unknown}"
+printf '  Serial:    %s\n' "${SERIAL:-unknown}"
+printf '  Size:      %s\n' "${SIZE:-unknown}"
+printf '  Transport: %s\n' "${TRAN:-unknown}"
+printf '  Removable: %s\n' "${RM:-unknown}"
+printf '  Hotplug:   %s\n' "${HOTPLUG:-unknown}"
+printf '\nALL DATA ON %s WILL BE DESTROYED.\n' "$TARGET"
+
+CONFIRM="ERASE $TARGET"
+read -r -p "Type exactly '${CONFIRM}' to continue: " REPLY
+[[ "$REPLY" == "$CONFIRM" ]] || die "confirmation mismatch; installation cancelled"
+
+# Re-check immediately before destruction in case device state changed while the
+# operator was reviewing identity.
+[[ -b "$TARGET" ]] || die "target disappeared before execution"
+if lsblk -nrpo MOUNTPOINT "$TARGET" 2>/dev/null | grep -qE '^/'; then
+  die "target became mounted before execution; refusing to continue"
+fi
+
+info "Identity checks passed; delegating to ark-install."
+exec ark-install "$TARGET" --confirm
