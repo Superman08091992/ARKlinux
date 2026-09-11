@@ -1,0 +1,43 @@
+name: External install validation
+
+on:
+  push:
+    branches:
+      - feature/external-arklinux-install-v1
+    paths:
+      - 'archiso/airootfs/usr/local/bin/ark-install-external'
+      - 'archiso/airootfs/usr/local/bin/ark-install'
+      - 'archiso/profiledef.sh'
+      - 'docs/EXTERNAL_INSTALL.md'
+      - '.github/workflows/external-install-validation.yml'
+  pull_request:
+    paths:
+      - 'archiso/airootfs/usr/local/bin/ark-install-external'
+      - 'archiso/airootfs/usr/local/bin/ark-install'
+      - 'archiso/profiledef.sh'
+      - 'docs/EXTERNAL_INSTALL.md'
+      - '.github/workflows/external-install-validation.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Bash syntax
+        run: |
+          bash -n archiso/airootfs/usr/local/bin/ark-install
+          bash -n archiso/airootfs/usr/local/bin/ark-install-external
+          bash -n archiso/profiledef.sh
+      - name: ShellCheck installers
+        run: |
+          shellcheck -S warning archiso/airootfs/usr/local/bin/ark-install
+          shellcheck -S warning archiso/airootfs/usr/local/bin/ark-install-external
+      - name: Assert canonical external installer contract
+        run: |
+          grep -Fq 'exec ark-install "$TARGET" --confirm' archiso/airootfs/usr/local/bin/ark-install-external
+          grep -Fq 'subvol=@ark' archiso/airootfs/usr/local/bin/ark-install
+          ! grep -Fq 'subvol=@opt_ark' archiso/airootfs/usr/local/bin/ark-install
+          grep -Fq '["/usr/local/bin/ark-install-external"]="0:0:755"' archiso/profiledef.sh
