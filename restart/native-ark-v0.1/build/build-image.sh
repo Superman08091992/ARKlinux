@@ -1,5 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+# Run the complete assembler away from the workstation's live mount, PID, and
+# /run namespaces. arch-chroot may bind its caller's /run into the guest, so the
+# caller must expose only this build-private tmpfs—not host desktop, D-Bus,
+# systemd, or GnuPG sockets.
+[[ ${EUID:-$(id -u)} -eq 0 ]] || {
+  echo "ERROR: build-image.sh must run as root" >&2
+  exit 1
+}
+if [[ "${ARKLINUX_PRIVATE_BUILD_NAMESPACE:-0}" != "1" ]]; then
+  exec unshare --mount --pid --fork --mount-proc --kill-child=SIGKILL \
+    /usr/bin/env ARKLINUX_PRIVATE_BUILD_NAMESPACE=1 SYSTEMD_OFFLINE=1 \
+    /usr/bin/bash "$0" "$@"
+fi
+
+mount --make-rprivate /
+RESOLV_TARGET="$(readlink -f /etc/resolv.conf 2>/dev/null || true)"
+RESOLV_COPY="$(mktemp /tmp/arklinux-resolv.XXXXXX)"
+if [[ -r /etc/resolv.conf ]]; then
+  cp --dereference /etc/resolv.conf "$RESOLV_COPY"
+else
+  : > "$RESOLV_COPY"
+fi
+mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run
+mkdir -p /run/lock
+if [[ "$RESOLV_TARGET" == /run/* ]]; then
+  mkdir -p "$(dirname "$RESOLV_TARGET")"
+  install -m 0644 "$RESOLV_COPY" "$RESOLV_TARGET"
+fi
+rm -f "$RESOLV_COPY"
+export SYSTEMD_OFFLINE=1
 RELROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARK_GENESIS_LOCK="$RELROOT/config/ark-genesis.lock"
 [[ -s "$ARK_GENESIS_LOCK" ]] || { echo "ERROR: missing ARK_GENESIS lock: $ARK_GENESIS_LOCK" >&2; exit 1; }
@@ -342,12 +373,12 @@ arch-chroot "$MNT" /bin/bash -lc \
   "lsinitcpio '/boot$INITRAMFS_IMAGE' | grep -Eq '/nouveau\\.ko(\\.(gz|xz|zst))?$'"
 
 stage "enable native services"
-arch-chroot "$MNT" systemctl enable NetworkManager.service nftables.service chronyd.service greetd.service ollama.service ark-embedding-model.service ark-firstboot.service ark.target ark-desktop-core.target ark-ui-broker.service ark-shell-server.service ark-display-adapter.service ark-boot-proof.service ark-gpu-report.service ark-display-preflight.service
-arch-chroot "$MNT" systemctl --global enable ark-embodied-desktop.service
+systemctl --root="$MNT" enable NetworkManager.service nftables.service chronyd.service greetd.service ollama.service ark-embedding-model.service ark-firstboot.service ark.target ark-desktop-core.target ark-ui-broker.service ark-shell-server.service ark-display-adapter.service ark-boot-proof.service ark-gpu-report.service ark-display-preflight.service
+systemctl --root="$MNT" --global enable ark-embodied-desktop.service
 # Keep ttyS0 as a write-only CI/emergency console without letting the generated
 # serial getty restart forever on workstations that have no usable serial port.
-arch-chroot "$MNT" systemctl mask serial-getty@ttyS0.service
-arch-chroot "$MNT" systemctl set-default graphical.target
+systemctl --root="$MNT" mask serial-getty@ttyS0.service
+systemctl --root="$MNT" set-default graphical.target
 
 stage "validate native A.R.K. contract"
 arch-chroot "$MNT" /bin/bash -lc 'test "$(stat -c "%U:%G:%a" /)" = root:root:755 && test "$(stat -c "%U:%G" /etc)" = root:root && test "$(stat -c "%U:%G" /usr)" = root:root && test "$(stat -c "%U:%G" /usr/lib)" = root:root'
