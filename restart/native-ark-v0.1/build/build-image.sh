@@ -1,5 +1,38 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+# Run the complete assembler away from the workstation's live mount, PID, and
+# /run namespaces. arch-chroot may bind its caller's /run into the guest, so the
+# caller must expose only this build-private tmpfs—not host desktop, D-Bus,
+# systemd, or GnuPG sockets.
+[[ ${EUID:-$(id -u)} -eq 0 ]] || {
+  echo "ERROR: build-image.sh must run as root" >&2
+  exit 1
+}
+if [[ "${ARKLINUX_PRIVATE_BUILD_NAMESPACE:-0}" != "1" ]]; then
+  exec unshare --mount --pid --fork --mount-proc --kill-child=SIGKILL \
+    /usr/bin/env ARKLINUX_PRIVATE_BUILD_NAMESPACE=1 SYSTEMD_OFFLINE=1 \
+    /usr/bin/bash "$0" "$@"
+fi
+
+mount --make-rprivate /
+RESOLV_TARGET="$(readlink -f /etc/resolv.conf 2>/dev/null || true)"
+RESOLV_COPY="$(mktemp /tmp/arklinux-resolv.XXXXXX)"
+if [[ -r /etc/resolv.conf ]]; then
+  cp --dereference /etc/resolv.conf "$RESOLV_COPY"
+else
+  : > "$RESOLV_COPY"
+fi
+mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run
+mkdir -p /run/lock
+if [[ "$RESOLV_TARGET" == /run/* ]]; then
+  mkdir -p "$(dirname "$RESOLV_TARGET")"
+  install -m 0644 "$RESOLV_COPY" "$RESOLV_TARGET"
+fi
+rm -f "$RESOLV_COPY"
+unset DBUS_SESSION_BUS_ADDRESS DBUS_SYSTEM_BUS_ADDRESS DISPLAY WAYLAND_DISPLAY
+unset XAUTHORITY XDG_RUNTIME_DIR PULSE_SERVER SSH_AUTH_SOCK GPG_AGENT_INFO
+export SYSTEMD_OFFLINE=1
 RELROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARK_GENESIS_LOCK="$RELROOT/config/ark-genesis.lock"
 [[ -s "$ARK_GENESIS_LOCK" ]] || { echo "ERROR: missing ARK_GENESIS lock: $ARK_GENESIS_LOCK" >&2; exit 1; }
@@ -30,6 +63,14 @@ ROOT_DEV=""
 KPARTX_ACTIVE=0
 
 stage(){ printf '\n==> %s\n' "$*"; }
+
+validate_guest_contract(){
+  local label="$1" check="$2"
+  if ! arch-chroot "$MNT" /bin/bash -c "$check"; then
+    echo "ERROR: native A.R.K. contract failed: $label" >&2
+    return 1
+  fi
+}
 
 teardown_build_state(){
   local tracked_loop="${LOOP:-}" associated_loops="" failed=0
@@ -342,27 +383,27 @@ arch-chroot "$MNT" /bin/bash -lc \
   "lsinitcpio '/boot$INITRAMFS_IMAGE' | grep -Eq '/nouveau\\.ko(\\.(gz|xz|zst))?$'"
 
 stage "enable native services"
-arch-chroot "$MNT" systemctl enable NetworkManager.service nftables.service chronyd.service greetd.service ollama.service ark-embedding-model.service ark-firstboot.service ark.target ark-desktop-core.target ark-ui-broker.service ark-shell-server.service ark-display-adapter.service ark-boot-proof.service ark-gpu-report.service ark-display-preflight.service
-arch-chroot "$MNT" systemctl --global enable ark-embodied-desktop.service
+systemctl --root="$MNT" enable NetworkManager.service nftables.service chronyd.service greetd.service ollama.service ark-embedding-model.service ark-firstboot.service ark.target ark-desktop-core.target ark-ui-broker.service ark-shell-server.service ark-display-adapter.service ark-boot-proof.service ark-gpu-report.service ark-display-preflight.service
+systemctl --root="$MNT" --global enable ark-embodied-desktop.service
 # Keep ttyS0 as a write-only CI/emergency console without letting the generated
 # serial getty restart forever on workstations that have no usable serial port.
-arch-chroot "$MNT" systemctl mask serial-getty@ttyS0.service
-arch-chroot "$MNT" systemctl set-default graphical.target
+systemctl --root="$MNT" mask serial-getty@ttyS0.service
+systemctl --root="$MNT" set-default graphical.target
 
 stage "validate native A.R.K. contract"
-arch-chroot "$MNT" /bin/bash -lc 'test "$(stat -c "%U:%G:%a" /)" = root:root:755 && test "$(stat -c "%U:%G" /etc)" = root:root && test "$(stat -c "%U:%G" /usr)" = root:root && test "$(stat -c "%U:%G" /usr/lib)" = root:root'
-arch-chroot "$MNT" /bin/bash -lc 'test -d /ark/runtime && test -f /ark/pair_mvp/pipeline.py && test -f /ark/pair_mvp/alatheia.py && test -x /usr/bin/ark-agentic-model-proof && test -f /etc/ark/ARK_GENESIS_COMMIT && test -f /etc/ark/ALATHEIA_COMMIT && ! test -e /opt/ark && ! test -L /opt/ark'
-arch-chroot "$MNT" /bin/bash -lc 'test -x /usr/local/sbin/ark-model-pull && test -r /usr/share/ark/model-catalog.json && test -f /etc/systemd/system/ollama.service.d/10-ark-model-store.conf && grep -q "OLLAMA_MODELS=/ark/models/ollama" /etc/systemd/system/ollama.service.d/10-ark-model-store.conf'
-arch-chroot "$MNT" /bin/bash -lc 'test "$(stat -c "%U:%G:%a" /ark/models/ollama)" = ollama:ollama:750 && id -nG ollama | tr " " "\n" | grep -qx ark-state'
-arch-chroot "$MNT" /bin/bash -lc 'for path in /ark/logs /ark/bus /var/log/ark; do test -d "$path" && test "$(stat -c "%U:%G:%a" "$path")" = arkd:ark-state:770 || exit 1; done'
-arch-chroot "$MNT" /bin/bash -lc 'for role in kyle aletheia joey hrm kenny; do mountpoint -q "/ark/agents/$role" && test "$(stat -c "%U:%G:%a" "/ark/agents/$role")" = "ark-$role:ark-agent-audit:750" || exit 1; done'
-arch-chroot "$MNT" /bin/bash -lc 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service && test -f /usr/lib/systemd/system/ark-batch-executor.socket && test -f /usr/lib/systemd/system/ark-batch-executor.service'
-arch-chroot "$MNT" /bin/bash -lc 'test -s /usr/lib/arklinux-shell/dist/index.html && test -s /usr/lib/arklinux-shell/build/server.cjs && test -s /usr/lib/arklinux-shell/electron/main.cjs && test -x /usr/lib/ark-desktop/ui_broker.py && test -x /usr/local/bin/ark-embodied-desktop && test -x /usr/local/sbin/ark-desktop-ready && test -f /etc/ark/ARKLINUX_SHELL_COMMIT'
-arch-chroot "$MNT" /bin/bash -lc 'test -f /etc/systemd/system/ark-desktop-core.target && test -f /etc/systemd/system/ark-ui-broker.service && test -f /etc/systemd/system/ark-shell-server.service && test -f /etc/systemd/system/ark.target.d/20-critical-desktop.conf && test -f /etc/systemd/user/ark-embodied-desktop.service'
-arch-chroot "$MNT" /bin/bash -lc 'systemd-analyze verify /usr/lib/systemd/system/ollama.service /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-batch-executor.socket /usr/lib/systemd/system/ark-batch-executor.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-desktop-core.target /etc/systemd/system/ark-ui-broker.service /etc/systemd/system/ark-shell-server.service /etc/systemd/user/ark-embodied-desktop.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service /etc/systemd/system/ark-gpu-report.service /etc/systemd/system/ark-display-preflight.service'
-arch-chroot "$MNT" /bin/bash -lc 'test -f /etc/pam.d/greetd && grep -q "pam_env.so conffile=/etc/greetd/greetd-pam-env.conf" /etc/pam.d/greetd && test -f /etc/systemd/system/greetd.service.d/10-arklinux-vt.conf'
-arch-chroot "$MNT" /bin/bash -lc 'grep -q "^OnFailure=getty@tty1.service$" /etc/systemd/system/ark-display-preflight.service && test "$(readlink /etc/systemd/system/serial-getty@ttyS0.service)" = /dev/null'
-arch-chroot "$MNT" /bin/bash -lc 'pacman -Q linux-lts linux-lts-headers mesa libdrm plasma-pa xdg-desktop-portal-kde rtkit python-cryptography nodejs-lts-krypton electron >/dev/null'
+validate_guest_contract root_ownership 'test "$(stat -c "%U:%G:%a" /)" = root:root:755 && test "$(stat -c "%U:%G" /etc)" = root:root && test "$(stat -c "%U:%G" /usr)" = root:root && test "$(stat -c "%U:%G" /usr/lib)" = root:root'
+validate_guest_contract runtime_payload 'test -d /ark/runtime && test -f /ark/pair_mvp/pipeline.py && test -f /ark/pair_mvp/alatheia.py && test -x /usr/bin/ark-agentic-model-proof && test -f /etc/ark/ARK_GENESIS_COMMIT && test -f /etc/ark/ALATHEIA_COMMIT && ! test -e /opt/ark && ! test -L /opt/ark'
+validate_guest_contract model_store_contract 'test -x /usr/local/sbin/ark-model-pull && test -r /usr/share/ark/model-catalog.json && test -f /etc/systemd/system/ollama.service.d/10-ark-model-store.conf && grep -q "OLLAMA_MODELS=/ark/models/ollama" /etc/systemd/system/ollama.service.d/10-ark-model-store.conf'
+validate_guest_contract model_store_ownership 'test "$(stat -c "%U:%G:%a" /ark/models/ollama)" = ollama:ollama:750 && id -nG ollama | tr " " "\n" | grep -qx ark-state'
+validate_guest_contract shared_runtime_paths 'for path in /ark/logs /ark/bus /var/log/ark; do test -d "$path" && test "$(stat -c "%U:%G:%a" "$path")" = arkd:ark-state:770 || exit 1; done'
+validate_guest_contract agent_subvolume_mounts 'for role in kyle aletheia joey hrm kenny; do mountpoint -q "/ark/agents/$role" && test "$(stat -c "%U:%G:%a" "/ark/agents/$role")" = "ark-$role:ark-agent-audit:750" || exit 1; done'
+validate_guest_contract core_units 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service && test -f /usr/lib/systemd/system/ark-batch-executor.socket && test -f /usr/lib/systemd/system/ark-batch-executor.service'
+validate_guest_contract embodied_desktop_payload 'test -s /usr/lib/arklinux-shell/dist/index.html && test -s /usr/lib/arklinux-shell/build/server.cjs && test -s /usr/lib/arklinux-shell/electron/main.cjs && test -x /usr/lib/ark-desktop/ui_broker.py && test -x /usr/local/bin/ark-embodied-desktop && test -x /usr/local/sbin/ark-desktop-ready && test -f /etc/ark/ARKLINUX_SHELL_COMMIT'
+validate_guest_contract desktop_units 'test -f /etc/systemd/system/ark-desktop-core.target && test -f /etc/systemd/system/ark-ui-broker.service && test -f /etc/systemd/system/ark-shell-server.service && test -f /etc/systemd/system/ark.target.d/20-critical-desktop.conf && test -f /etc/systemd/user/ark-embodied-desktop.service'
+validate_guest_contract systemd_units 'systemd-analyze verify /usr/lib/systemd/system/ollama.service /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-batch-executor.socket /usr/lib/systemd/system/ark-batch-executor.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-desktop-core.target /etc/systemd/system/ark-ui-broker.service /etc/systemd/system/ark-shell-server.service /etc/systemd/user/ark-embodied-desktop.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service /etc/systemd/system/ark-gpu-report.service /etc/systemd/system/ark-display-preflight.service'
+validate_guest_contract greetd_pam 'test -f /etc/pam.d/greetd && grep -q "pam_env.so conffile=/etc/greetd/greetd-pam-env.conf" /etc/pam.d/greetd && test -f /etc/systemd/system/greetd.service.d/10-arklinux-vt.conf'
+validate_guest_contract console_failover 'grep -q "^OnFailure=getty@tty1.service$" /etc/systemd/system/ark-display-preflight.service && test "$(readlink /etc/systemd/system/serial-getty@ttyS0.service)" = /dev/null'
+validate_guest_contract package_inventory 'pacman -Q linux-lts linux-lts-headers mesa libdrm plasma-pa xdg-desktop-portal-kde rtkit python-cryptography nodejs-lts-krypton electron >/dev/null'
 
 stage "collect image evidence"
 mkdir -p "$OUT/evidence"; cp "$RELROOT/config/subvolumes.tsv" "$OUT/evidence/subvolumes.tsv"; cp "$RELROOT/config/packages.x86_64" "$OUT/evidence/packages.requested"; cp "$RELROOT/config/dependencies.md" "$OUT/evidence/dependencies.md"; cp "$MNT/etc/fstab" "$OUT/evidence/fstab"; pacman --root "$MNT" --config /etc/pacman.conf -Q > "$OUT/evidence/packages.installed"; btrfs subvolume list "$MNT" > "$OUT/evidence/btrfs-subvolumes.txt"; findmnt -R "$MNT" > "$OUT/evidence/mount-tree.txt"; cp "$MNT/etc/ark/ARK_GENESIS_COMMIT" "$OUT/evidence/ARK_GENESIS_COMMIT"; cp "$MNT/etc/ark/ALATHEIA_COMMIT" "$OUT/evidence/ALATHEIA_COMMIT"; sha256sum "$OVERLAY" > "$OUT/evidence/ARK_RUNTIME_OVERLAY_SHA256"

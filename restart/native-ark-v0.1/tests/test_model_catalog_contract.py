@@ -58,7 +58,10 @@ class ModelCatalogContractTests(unittest.TestCase):
         self.assertIn('ollama stop "$model"', script)
         self.assertIn("model-inventory.json", script)
         build = (ROOT / "build/build-image.sh").read_text(encoding="utf-8")
-        enable_line = next(line for line in build.splitlines() if "systemctl enable NetworkManager" in line)
+        enable_line = next(
+            line for line in build.splitlines()
+            if "enable NetworkManager.service" in line
+        )
         self.assertNotIn("ark-model-pull", enable_line)
         result = subprocess.run(["bash", "-n", str(PULL_SCRIPT)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
