@@ -256,7 +256,7 @@ printf 'qemu_exit=%s\n' "$RC" >> "$PROOF_TMP"
 rm -f -- "$RAW"
 mv -f -- "$IDENTITIES_TMP" "$OUTDIR/agent-identities.txt"
 IDENTITIES_TMP=""
+printf 'QEMU native boot proof passed; publishing evidence.\n'
 mv -f -- "$PROOF_TMP" "$OUTDIR/proof.txt"
 PROOF_TMP=""
-printf 'QEMU native boot proof passed.\n'
 
