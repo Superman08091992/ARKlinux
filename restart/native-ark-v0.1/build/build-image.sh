@@ -224,6 +224,7 @@ arch-chroot "$MNT" locale-gen
 
 stage "apply A.R.K. system users"
 arch-chroot "$MNT" systemd-sysusers /usr/lib/sysusers.d/ark-native.conf /usr/lib/sysusers.d/ark-desktop.conf
+arch-chroot "$MNT" getent group ark-agent-audit >/dev/null || { echo "ERROR: sysusers did not create ark-agent-audit" >&2; exit 1; }
 
 stage "apply native Btrfs mount ownership contract"
 apply_subvolume_mount_contract
