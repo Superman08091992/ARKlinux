@@ -33,6 +33,16 @@ terminate_qemu_group(){
   return 1
 }
 
+wait_qemu_group_ready(){
+  local runner_pid="$1"
+  for _ in {1..100}; do
+    kill -0 -- "-$runner_pid" 2>/dev/null && return 0
+    kill -0 "$runner_pid" 2>/dev/null || return 1
+    sleep 0.05
+  done
+  return 1
+}
+
 cleanup_qemu_raw(){
   local rc=$?
   local qemu_stopped=1
@@ -85,6 +95,13 @@ setsid timeout --signal=TERM --kill-after=10s "$QEMU_TIMEOUT_SECONDS" qemu-syste
   -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
   -display none -monitor none -serial stdio -no-reboot > >(tee "$LOG") 2>&1 &
 QEMU_RUNNER_PID=$!
+if ! wait_qemu_group_ready "$QEMU_RUNNER_PID"; then
+  kill -TERM "$QEMU_RUNNER_PID" 2>/dev/null || true
+  wait "$QEMU_RUNNER_PID" 2>/dev/null || true
+  QEMU_RUNNER_PID=""
+  echo "ERROR: QEMU process group was not established" >&2
+  exit 1
+fi
 STOPPED_ON_MARKER=0
 TERMINATION_FAILED=0
 while kill -0 -- "-$QEMU_RUNNER_PID" 2>/dev/null; do
