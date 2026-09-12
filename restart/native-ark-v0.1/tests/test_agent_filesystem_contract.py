@@ -61,6 +61,46 @@ class AgentFilesystemContractTests(unittest.TestCase):
         self.assertIn("identity marker set is not exact", qemu_proof)
         self.assertIn("identity marker set contains duplicate key IDs", qemu_proof)
         self.assertIn("guest identity-set marker is missing or duplicated", qemu_proof)
+        self.assertIn("QEMU boot produced ARK_NATIVE_BOOT_PROOF=FAIL", qemu_proof)
+        stale_invalidation = '"$OUTDIR/proof.txt" "$OUTDIR/agent-identities.txt"'
+        self.assertIn(stale_invalidation, qemu_proof)
+        self.assertLess(
+            qemu_proof.index(stale_invalidation),
+            qemu_proof.index('REUSE_RAW="${ARK_QEMU_REUSE_RAW:-0}"'),
+        )
+        self.assertIn('QEMU_LOCK="$OUTDIR.lock"', qemu_proof)
+        self.assertIn('flock -n "$QEMU_LOCK_FD"', qemu_proof)
+        self.assertLess(
+            qemu_proof.index('flock -n "$QEMU_LOCK_FD"'),
+            qemu_proof.index(stale_invalidation),
+        )
+        self.assertIn("IMAGE_SHA256_BEFORE", qemu_proof)
+        self.assertIn("IMAGE_SHA256_AFTER", qemu_proof)
+        self.assertIn('"$IMAGE_SHA256_AFTER" != "$IMAGE_SHA256_BEFORE"', qemu_proof)
+        self.assertIn("ARK_QEMU_IMAGE_SHA256", qemu_proof)
+        self.assertLess(
+            qemu_proof.index("compressed image changed during QEMU proof"),
+            qemu_proof.index('PROOF_TMP="$(mktemp'),
+        )
+        self.assertIn("ARK_QEMU_EXPECTED_IMAGE_SHA256", qemu_proof)
+        self.assertIn("ARK_QEMU_EXCLUSIVE_RUN_PROBE=PASS", qemu_proof)
+        self.assertIn('mv -f -- "$PROOF_TMP" "$OUTDIR/proof.txt"', qemu_proof)
+        self.assertLess(
+            qemu_proof.index("QEMU native boot proof passed; publishing evidence."),
+            qemu_proof.index('mv -f -- "$PROOF_TMP" "$OUTDIR/proof.txt"'),
+        )
+        self.assertLess(
+            qemu_proof.index('qemu_exit=%s\\n\' "$RC" >> "$PROOF_TMP"'),
+            qemu_proof.index('mv -f -- "$PROOF_TMP" "$OUTDIR/proof.txt"'),
+        )
+        self.assertNotIn('>> "$OUTDIR/proof.txt"', qemu_proof)
+        self.assertIn("refusing to derive proof", qemu_proof)
+        self.assertLess(
+            qemu_proof.index("refusing to derive proof"),
+            qemu_proof.index('with proof_path.open("a", encoding="utf-8")'),
+        )
+        self.assertIn('proof.write("ARK_NATIVE_BOOT_PROOF=PASS\\n")', qemu_proof)
+        self.assertIn("ARK_QEMU_IDENTITY_EVIDENCE=PASS", qemu_proof)
         self.assertNotIn(
             "printf 'ARK_AGENT_IDENTITY_SET_PROBE=PASS",
             qemu_proof,

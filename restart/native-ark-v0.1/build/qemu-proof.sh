@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 0077
-IMAGE_ZST="${1:?usage: qemu-proof.sh arklinux-native-v0.1-x86_64.raw.zst}"
-OUTDIR="${2:-$(dirname "$IMAGE_ZST")/qemu-proof}"
+IMAGE_ZST_INPUT="${1:?usage: qemu-proof.sh arklinux-native-v0.1-x86_64.raw.zst}"
+IMAGE_ZST="$(realpath -m "$IMAGE_ZST_INPUT")"
+OUTDIR="$(realpath -m "${2:-$(dirname "$IMAGE_ZST")/qemu-proof}")"
+mkdir -p "$(dirname "$OUTDIR")"
+QEMU_LOCK="$OUTDIR.lock"
+exec {QEMU_LOCK_FD}> "$QEMU_LOCK"
+if ! flock -n "$QEMU_LOCK_FD"; then
+  echo "ERROR: QEMU proof already active for $OUTDIR" >&2
+  exit 1
+fi
 mkdir -p "$OUTDIR"
+rm -f -- "$OUTDIR/proof.txt" "$OUTDIR/agent-identities.txt"
 chmod 0700 "$OUTDIR"
 RAW="$OUTDIR/arklinux-qemu.raw"
 LOG="$OUTDIR/serial.log"
+PROOF_TMP=""
+IDENTITIES_TMP=""
 REUSE_RAW="${ARK_QEMU_REUSE_RAW:-0}"
 RETAIN_FAILED_RAW="${ARK_QEMU_RETAIN_FAILED_RAW:-0}"
 QEMU_RUNNER_PID=""
@@ -56,6 +67,10 @@ cleanup_qemu_raw(){
       printf 'ERROR: QEMU process group did not stop; retaining its mutable disk\n' >&2
     fi
   fi
+  local transient
+  for transient in "$PROOF_TMP" "$IDENTITIES_TMP"; do
+    [[ -z "$transient" ]] || rm -f -- "$transient"
+  done
   if [[ -f "$RAW" ]]; then
     if [[ "$qemu_stopped" != "1" ]]; then
       chmod 0600 "$RAW"
@@ -74,7 +89,25 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
 
-rm -f "$LOG" "$RAW"
+rm -f -- "$LOG" "$RAW" \
+  "$OUTDIR"/.proof.txt.*.tmp "$OUTDIR"/.agent-identities.txt.*.tmp
+IMAGE_SHA256_BEFORE="$(sha256sum -- "$IMAGE_ZST")"
+IMAGE_SHA256_BEFORE="${IMAGE_SHA256_BEFORE%% *}"
+[[ "$IMAGE_SHA256_BEFORE" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "ERROR: could not bind QEMU proof to a valid image digest" >&2
+  exit 1
+}
+EXPECTED_IMAGE_SHA256="${ARK_QEMU_EXPECTED_IMAGE_SHA256:-}"
+if [[ -n "$EXPECTED_IMAGE_SHA256" ]]; then
+  [[ "$EXPECTED_IMAGE_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
+    echo "ERROR: invalid expected QEMU image digest" >&2
+    exit 1
+  }
+  [[ "$IMAGE_SHA256_BEFORE" == "$EXPECTED_IMAGE_SHA256" ]] || {
+    echo "ERROR: QEMU image digest differs from caller commitment" >&2
+    exit 1
+  }
+fi
 zstd -d --sparse "$IMAGE_ZST" -o "$RAW"
 chmod 0600 "$RAW"
 
@@ -132,14 +165,39 @@ if [[ "$TERMINATION_FAILED" == "0" && "$STOPPED_ON_MARKER" == "1" ]] &&
 fi
 set -e
 
+if [[ "$TERMINATION_FAILED" != "0" ]]; then
+  echo "ERROR: QEMU process group teardown failed; refusing to derive proof" >&2
+  tail -200 "$LOG" >&2
+  exit 1
+fi
+if grep -q 'ARK_NATIVE_BOOT_PROOF=FAIL' "$LOG"; then
+  echo "ERROR: QEMU boot produced ARK_NATIVE_BOOT_PROOF=FAIL (qemu rc=$RC)" >&2
+  tail -200 "$LOG" >&2
+  exit 1
+fi
 if ! grep -q 'ARK_NATIVE_BOOT_PROOF=PASS' "$LOG"; then
   echo "ERROR: QEMU boot did not produce ARK_NATIVE_BOOT_PROOF=PASS (qemu rc=$RC)" >&2
   tail -200 "$LOG" >&2
   exit 1
 fi
 
-grep 'ARK_SOURCE_PROVENANCE_PROBE=PASS\|ARK_AGENT_SOCKET_PROBE=PASS\|ARK_AGENT_IDENTITY_PROBE=PASS\|ARK_AGENT_IDENTITY_SET_PROBE=PASS\|ARK_AGENT_CROSS_ROLE_ACCESS_PROBE=PASS\|ARK_STATUS_PROBE=PASS\|ARK_INGESTION_PREVERIFICATION_PROBE=PASS\|ARK_INGESTION_DEDUPLICATION_PROBE=PASS\|ARK_ALATHEIA_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_REJECTION_PROBE=PASS\|ARK_ALATHEIA_VERIFICATION_PROBE=PASS\|ARK_INGESTION_PROBE=PASS\|ARK_INGESTION_PERSISTENCE_PROBE=PASS\|ARK_GRAVEYARD_UNVERIFIED_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_ADMISSION_PROBE=PASS\|ARK_GRAVEYARD_TAMPER_REJECTION_PROBE=PASS\|ARK_REAL_EMBEDDING_PROBE=PASS\|ARK_EVIDENCE_CONTINUITY_PROBE=PASS\|ARK_NATIVE_BOOT_PROOF=PASS' "$LOG" > "$OUTDIR/proof.txt"
-/usr/bin/python - "$OUTDIR/proof.txt" "$OUTDIR/agent-identities.txt" <<'PY'
+if [[ "$RC" -ne 0 ]]; then
+  echo "ERROR: QEMU exited unsuccessfully after proof collection (qemu rc=$RC)" >&2
+  tail -200 "$LOG" >&2
+  exit 1
+fi
+
+IMAGE_SHA256_AFTER="$(sha256sum -- "$IMAGE_ZST")"
+IMAGE_SHA256_AFTER="${IMAGE_SHA256_AFTER%% *}"
+if [[ "$IMAGE_SHA256_AFTER" != "$IMAGE_SHA256_BEFORE" ]]; then
+  echo "ERROR: compressed image changed during QEMU proof; refusing evidence" >&2
+  exit 1
+fi
+
+PROOF_TMP="$(mktemp "$OUTDIR/.proof.txt.XXXXXX.tmp")"
+IDENTITIES_TMP="$(mktemp "$OUTDIR/.agent-identities.txt.XXXXXX.tmp")"
+grep 'ARK_SOURCE_PROVENANCE_PROBE=PASS\|ARK_AGENT_SOCKET_PROBE=PASS\|ARK_AGENT_IDENTITY_PROBE=PASS\|ARK_AGENT_IDENTITY_SET_PROBE=PASS\|ARK_AGENT_CROSS_ROLE_ACCESS_PROBE=PASS\|ARK_STATUS_PROBE=PASS\|ARK_INGESTION_PREVERIFICATION_PROBE=PASS\|ARK_INGESTION_DEDUPLICATION_PROBE=PASS\|ARK_ALATHEIA_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_REJECTION_PROBE=PASS\|ARK_ALATHEIA_VERIFICATION_PROBE=PASS\|ARK_INGESTION_PROBE=PASS\|ARK_INGESTION_PERSISTENCE_PROBE=PASS\|ARK_GRAVEYARD_UNVERIFIED_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_ADMISSION_PROBE=PASS\|ARK_GRAVEYARD_TAMPER_REJECTION_PROBE=PASS\|ARK_REAL_EMBEDDING_PROBE=PASS\|ARK_EVIDENCE_CONTINUITY_PROBE=PASS\|ARK_NATIVE_BOOT_PROOF=PASS' "$LOG" > "$PROOF_TMP"
+/usr/bin/python - "$PROOF_TMP" "$IDENTITIES_TMP" <<'PY'
 import collections
 import re
 import sys
@@ -182,9 +240,23 @@ identity_path.write_text(
     ),
     encoding="utf-8",
 )
-print("ARK_QEMU_IDENTITY_EVIDENCE=PASS roles=5 unique_key_ids=5 sockets=5")
+qemu_identity_marker = (
+    "ARK_QEMU_IDENTITY_EVIDENCE=PASS roles=5 unique_key_ids=5 sockets=5"
+)
+with proof_path.open("a", encoding="utf-8") as proof:
+    # Preserve the prefixed serial evidence above, then add the canonical
+    # verified markers consumed by DREAMER's release gate.
+    proof.write(qemu_identity_marker + "\n")
+    proof.write("ARK_NATIVE_BOOT_PROOF=PASS\n")
+print(qemu_identity_marker)
 PY
-printf 'qemu_exit=%s\n' "$RC" >> "$OUTDIR/proof.txt"
-printf 'QEMU native boot proof passed.\n'
+printf 'ARK_QEMU_EXCLUSIVE_RUN_PROBE=PASS scope=outdir\n' >> "$PROOF_TMP"
+printf 'ARK_QEMU_IMAGE_SHA256=%s\n' "$IMAGE_SHA256_AFTER" >> "$PROOF_TMP"
+printf 'qemu_exit=%s\n' "$RC" >> "$PROOF_TMP"
 rm -f -- "$RAW"
+mv -f -- "$IDENTITIES_TMP" "$OUTDIR/agent-identities.txt"
+IDENTITIES_TMP=""
+printf 'QEMU native boot proof passed; publishing evidence.\n'
+mv -f -- "$PROOF_TMP" "$OUTDIR/proof.txt"
+PROOF_TMP=""
 
