@@ -130,8 +130,7 @@ for role in kyle aletheia joey hrm kenny; do
   [[ -s "/ark/agent-public-keys/$role/signing-key.json" ]] || fail "missing_agent_public_key:$role"
   [[ "$(stat -c '%U:%a' "/ark/agent-public-keys/$role/signing-key.json")" == "ark-$role:644" ]] ||
     fail "invalid_agent_public_key:$role"
-  /usr/bin/runuser -u "ark-$role" -- /usr/bin/python - "$role" <<'PY' ||
-    fail "invalid_agent_identity:$role"
+  if ! /usr/bin/runuser -u "ark-$role" -- /usr/bin/python - "$role" <<'PY'
 import base64
 import hashlib
 import json
@@ -166,6 +165,9 @@ signature = private_key.sign(challenge)
 public_key.verify(signature, challenge)
 print(f"ARK_AGENT_IDENTITY_PROBE=PASS role={role} key_id={expected['key_id']}")
 PY
+  then
+    fail "invalid_agent_identity:$role"
+  fi
 done
 
 python - <<'PY' || fail 'status_probe_failed'
