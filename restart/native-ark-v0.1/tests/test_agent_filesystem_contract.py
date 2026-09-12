@@ -86,6 +86,10 @@ class AgentFilesystemContractTests(unittest.TestCase):
         self.assertIn("ARK_QEMU_EXCLUSIVE_RUN_PROBE=PASS", qemu_proof)
         self.assertIn('mv -f -- "$PROOF_TMP" "$OUTDIR/proof.txt"', qemu_proof)
         self.assertLess(
+            qemu_proof.index("QEMU native boot proof passed; publishing evidence."),
+            qemu_proof.index('mv -f -- "$PROOF_TMP" "$OUTDIR/proof.txt"'),
+        )
+        self.assertLess(
             qemu_proof.index('qemu_exit=%s\\n\' "$RC" >> "$PROOF_TMP"'),
             qemu_proof.index('mv -f -- "$PROOF_TMP" "$OUTDIR/proof.txt"'),
         )
