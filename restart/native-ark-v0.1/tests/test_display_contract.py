@@ -196,7 +196,9 @@ class DisplayContractTests(unittest.TestCase):
         self.assertNotIn('arch-chroot "$MNT" systemctl enable', build)
         self.assertIn("validate_guest_contract runtime_payload", build)
         self.assertIn("native A.R.K. contract failed: $label", build)
-        self.assertNotIn('arch-chroot "$MNT" /bin/bash -lc', build)
+        self.assertIn(
+            'if ! arch-chroot "$MNT" /bin/bash -c "$check"; then', build
+        )
 
 
 class DisplayPreflightTests(unittest.TestCase):
