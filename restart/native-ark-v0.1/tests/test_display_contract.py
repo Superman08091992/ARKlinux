@@ -181,6 +181,17 @@ class DisplayContractTests(unittest.TestCase):
         self.assertIn("teardown_build_state", build)
         self.assertIn("associated_loops=", build)
         self.assertIn("another ARKlinux image build owns", build)
+        self.assertIn(
+            "unshare --mount --pid --fork --mount-proc --kill-child=SIGKILL",
+            build,
+        )
+        self.assertIn("mount --make-rprivate /", build)
+        self.assertIn(
+            "mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run", build
+        )
+        self.assertIn("export SYSTEMD_OFFLINE=1", build)
+        self.assertIn('systemctl --root="$MNT" enable', build)
+        self.assertNotIn('arch-chroot "$MNT" systemctl enable', build)
 
 
 class DisplayPreflightTests(unittest.TestCase):
