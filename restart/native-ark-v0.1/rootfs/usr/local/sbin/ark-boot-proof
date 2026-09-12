@@ -169,7 +169,7 @@ for role in kyle aletheia joey hrm kenny; do
   [[ "$(stat -c '%U:%G:%a' "$domain")" == "ark-$role:ark-agent-audit:750" ]] || fail "invalid_agent_domain:$role"
   [[ "$(stat -c '%U:%G:%a' "$domain/ledger")" == "ark-$role:ark-agent-audit:2750" ]] || fail "invalid_agent_ledger:$role"
   [[ -s "$domain/private/signing-key.pem" ]] || fail "missing_agent_private_key:$role"
-  [[ "$(stat -c '%U:%a' "$domain/private")" == "ark-$role:700" ]] || fail "invalid_agent_private_directory:$role"
+  [[ "$(stat -c '%U:%G:%a' "$domain/private")" == "ark-$role:ark-$role-ipc:700" ]] || fail "invalid_agent_private_directory:$role"
   [[ "$(stat -c '%U:%a' "$domain/private/signing-key.pem")" == "ark-$role:600" ]] || fail "invalid_agent_private_key:$role"
   [[ -s "/ark/agent-public-keys/$role/signing-key.json" ]] || fail "missing_agent_public_key:$role"
   [[ "$(stat -c '%U:%a' "/ark/agent-public-keys/$role/signing-key.json")" == "ark-$role:644" ]] ||
@@ -221,7 +221,7 @@ PY
   AGENT_KEY_ID_OWNERS["$key_id"]="$role"
   printf '%s\n' "$identity_marker"
 done
-printf 'ARK_AGENT_IDENTITY_UNIQUENESS_PROBE=PASS roles=5\n'
+printf 'ARK_AGENT_IDENTITY_SET_PROBE=PASS roles=5 unique_key_ids=5\n'
 
 peer_pairs=0
 for reader in kyle aletheia joey hrm kenny; do
