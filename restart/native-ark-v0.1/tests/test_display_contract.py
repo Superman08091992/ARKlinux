@@ -40,6 +40,10 @@ class DisplayContractTests(unittest.TestCase):
         build = (NATIVE_ROOT / "build/build-image.sh").read_text()
         self.assertIn("KERNEL_IMAGE=/vmlinuz-linux-lts", build)
         self.assertIn("INITRAMFS_IMAGE=/initramfs-linux-lts.img", build)
+        self.assertIn('-k "/boot$KERNEL_IMAGE"', build)
+        self.assertIn('-g "/boot$INITRAMFS_FALLBACK"', build)
+        self.assertIn("-S autodetect", build)
+        self.assertIn("portable initramfs generation failed", build)
         self.assertIn('cp "$MNT/boot${INITRAMFS_FALLBACK}"', build)
         self.assertIn("/nouveau\\\\.ko", build)
 
