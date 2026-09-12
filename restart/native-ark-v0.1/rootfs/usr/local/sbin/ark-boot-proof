@@ -23,8 +23,8 @@ diagnose_runtime_stack(){
 
 wait_active(){
   local unit="$1"
-  local attempt
-  for attempt in {1..30}; do
+  local _attempt
+  for _attempt in {1..30}; do
     systemctl is-active --quiet "$unit" && return 0
     sleep 1
   done
@@ -78,8 +78,8 @@ wait_agent_ready(){
   local domain="/ark/agents/$1"
   local public_key="/ark/agent-public-keys/$1/signing-key.json"
   local socket="/run/ark/agents/$1/$1.sock"
-  local attempt
-  for attempt in {1..30}; do
+  local _attempt
+  for _attempt in {1..30}; do
     if systemctl is-active --quiet "$unit" &&
        [[ -s "$domain/private/signing-key.pem" ]] &&
        [[ -s "$public_key" ]] &&
