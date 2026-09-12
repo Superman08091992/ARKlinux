@@ -173,14 +173,14 @@ class DisplayContractTests(unittest.TestCase):
         self.assertIn('pacman-key --populate archlinux', build)
         self.assertIn('pacman-key --updatedb', build)
         self.assertIn(
-            "GNUPGHOME=/etc/pacman.d/gnupg gpgconf --kill gpg-agent", build
+            "gpgconf --homedir /etc/pacman.d/gnupg --kill all", build
         )
         self.assertIn(
             "refusing to finalize while the guest filesystem remains mounted", build
         )
-        self.assertIn(
-            "refusing to finalize while a loop device remains attached", build
-        )
+        self.assertIn("teardown_build_state", build)
+        self.assertIn("associated_loops=", build)
+        self.assertIn("another ARKlinux image build owns", build)
 
 
 class DisplayPreflightTests(unittest.TestCase):
