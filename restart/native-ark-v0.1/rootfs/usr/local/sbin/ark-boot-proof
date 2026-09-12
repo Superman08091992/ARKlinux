@@ -42,6 +42,8 @@ client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 client.settimeout(1.0)
 try:
     client.connect(sys.argv[1])
+except OSError:
+    raise SystemExit(1)
 finally:
     client.close()
 PY
@@ -143,6 +145,7 @@ for role in kyle aletheia joey hrm kenny; do
   [[ "$(stat -c '%U:%G:%a' "$domain")" == "ark-$role:ark-agent-audit:750" ]] || fail "invalid_agent_domain:$role"
   [[ "$(stat -c '%U:%G:%a' "$domain/ledger")" == "ark-$role:ark-agent-audit:2750" ]] || fail "invalid_agent_ledger:$role"
   [[ -s "$domain/private/signing-key.pem" ]] || fail "missing_agent_private_key:$role"
+  [[ "$(stat -c '%U:%a' "$domain/private")" == "ark-$role:700" ]] || fail "invalid_agent_private_directory:$role"
   [[ "$(stat -c '%U:%a' "$domain/private/signing-key.pem")" == "ark-$role:600" ]] || fail "invalid_agent_private_key:$role"
   [[ -s "/ark/agent-public-keys/$role/signing-key.json" ]] || fail "missing_agent_public_key:$role"
   [[ "$(stat -c '%U:%a' "/ark/agent-public-keys/$role/signing-key.json")" == "ark-$role:644" ]] ||
@@ -195,6 +198,24 @@ PY
   printf '%s\n' "$identity_marker"
 done
 printf 'ARK_AGENT_IDENTITY_UNIQUENESS_PROBE=PASS roles=5\n'
+
+peer_pairs=0
+for reader in kyle aletheia joey hrm kenny; do
+  for owner in kyle aletheia joey hrm kenny; do
+    [[ "$reader" == "$owner" ]] && continue
+    /usr/bin/runuser -u "ark-$reader" -- /usr/bin/test ! -r "/ark/agents/$owner/private/signing-key.pem" ||
+      fail "peer_private_key_readable:$reader:$owner"
+    /usr/bin/runuser -u "ark-$reader" -- /usr/bin/test -r "/ark/agents/$owner/ledger" ||
+      fail "peer_ledger_unreadable:$reader:$owner"
+    /usr/bin/runuser -u "ark-$reader" -- /usr/bin/test -x "/ark/agents/$owner/ledger" ||
+      fail "peer_ledger_unsearchable:$reader:$owner"
+    /usr/bin/runuser -u "ark-$reader" -- /usr/bin/test ! -w "/ark/agents/$owner/ledger" ||
+      fail "peer_ledger_writable:$reader:$owner"
+    ((peer_pairs += 1))
+  done
+done
+[[ "$peer_pairs" -eq 20 ]] || fail "invalid_peer_access_pair_count:$peer_pairs"
+printf 'ARK_AGENT_CROSS_ROLE_ACCESS_PROBE=PASS private=isolated peer_ledgers=read_only pairs=%s\n' "$peer_pairs"
 
 python - <<'PY' || fail 'status_probe_failed'
 import json
