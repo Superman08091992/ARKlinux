@@ -300,7 +300,6 @@ options root=UUID=$ROOTUUID rootflags=subvol=@ark rw audit=1 console=tty0 consol
 EOF
 
 stage "regenerate portable initramfs"
-arch-chroot "$MNT" mkinitcpio -P
 # A release image must not inherit the build host's autodetect whitelist.
 # Current Arch kernel packages may ship a default-only preset, so generate the
 # portable image explicitly instead of assuming a vendor fallback preset exists.
