@@ -1,4 +1,4 @@
 # Exact private runtime source required by this native ARKlinux image contract.
 ARK_GENESIS_REPOSITORY=Superman08091992/ARK_GENESIS
-ARK_GENESIS_COMMIT=6f43e67609f40d06a433308a774add17eaa7942b
+ARK_GENESIS_COMMIT=eb4dfdaeb907a641de63e03b27bfcd723cd90e8c
 ARK_GENESIS_BRANCH=fix/agent-audit-sysusers
