@@ -32,20 +32,43 @@ wait_active(){
   fail "inactive:$unit"
 }
 
-agent_socket_accepts(){
-  local socket_path="$1"
-  /usr/bin/python - "$socket_path" <<'PY'
+agent_socket_responds(){
+  local role="$1"
+  local socket_path="$2"
+  /usr/bin/runuser -u "ark-$role" -- /usr/bin/python - "$socket_path" "$role" <<'PY'
+import json
 import socket
 import sys
 
+socket_path, role = sys.argv[1:]
+operation = "__ark_boot_readiness_probe__"
+request = {"operation": operation, "payload": {}}
 client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-client.settimeout(1.0)
+client.settimeout(2.0)
 try:
-    client.connect(sys.argv[1])
-except OSError:
-    raise SystemExit(1)
+    client.connect(socket_path)
+    client.sendall(
+        json.dumps(request, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        + b"\n"
+    )
+    data = b""
+    while b"\n" not in data and len(data) <= 65536:
+        chunk = client.recv(65536)
+        if not chunk:
+            break
+        data += chunk
 finally:
     client.close()
+if len(data) > 65536 or b"\n" not in data:
+    raise SystemExit("agent readiness response is incomplete")
+response = json.loads(data.split(b"\n", 1)[0].decode("utf-8"))
+expected_error = f"operation {operation!r} is not allowed for role {role!r}"
+if response != {
+    "ok": False,
+    "ipc_error": True,
+    "error": expected_error,
+}:
+    raise SystemExit("agent readiness response is invalid")
 PY
 }
 
@@ -61,7 +84,7 @@ wait_agent_ready(){
        [[ -s "$domain/private/signing-key.pem" ]] &&
        [[ -s "$public_key" ]] &&
        [[ -S "$socket" ]] &&
-       agent_socket_accepts "$socket"; then
+       agent_socket_responds "$role" "$socket"; then
       return 0
     fi
     sleep 1
@@ -141,6 +164,7 @@ wait_active ark-batch-executor.socket
 declare -A AGENT_KEY_ID_OWNERS=()
 for role in kyle aletheia joey hrm kenny; do
   wait_agent_ready "$role"
+  printf 'ARK_AGENT_SOCKET_PROBE=PASS role=%s\n' "$role"
   domain="/ark/agents/$role"
   [[ "$(stat -c '%U:%G:%a' "$domain")" == "ark-$role:ark-agent-audit:750" ]] || fail "invalid_agent_domain:$role"
   [[ "$(stat -c '%U:%G:%a' "$domain/ledger")" == "ark-$role:ark-agent-audit:2750" ]] || fail "invalid_agent_ledger:$role"
