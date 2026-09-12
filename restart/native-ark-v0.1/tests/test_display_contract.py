@@ -190,6 +190,8 @@ class DisplayContractTests(unittest.TestCase):
             "mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run", build
         )
         self.assertIn("export SYSTEMD_OFFLINE=1", build)
+        self.assertIn("unset DBUS_SESSION_BUS_ADDRESS", build)
+        self.assertIn("DISPLAY WAYLAND_DISPLAY", build)
         self.assertIn('systemctl --root="$MNT" enable', build)
         self.assertNotIn('arch-chroot "$MNT" systemctl enable', build)
 
