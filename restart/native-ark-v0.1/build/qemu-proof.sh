@@ -4,6 +4,7 @@ umask 0077
 IMAGE_ZST="${1:?usage: qemu-proof.sh arklinux-native-v0.1-x86_64.raw.zst}"
 OUTDIR="${2:-$(dirname "$IMAGE_ZST")/qemu-proof}"
 mkdir -p "$OUTDIR"
+rm -f -- "$OUTDIR/proof.txt" "$OUTDIR/agent-identities.txt"
 chmod 0700 "$OUTDIR"
 RAW="$OUTDIR/arklinux-qemu.raw"
 LOG="$OUTDIR/serial.log"
@@ -74,7 +75,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
 
-rm -f -- "$LOG" "$RAW" "$OUTDIR/proof.txt" "$OUTDIR/agent-identities.txt"
+rm -f -- "$LOG" "$RAW"
 zstd -d --sparse "$IMAGE_ZST" -o "$RAW"
 chmod 0600 "$RAW"
 
@@ -132,6 +133,11 @@ if [[ "$TERMINATION_FAILED" == "0" && "$STOPPED_ON_MARKER" == "1" ]] &&
 fi
 set -e
 
+if [[ "$TERMINATION_FAILED" != "0" ]]; then
+  echo "ERROR: QEMU process group teardown failed; refusing to derive proof" >&2
+  tail -200 "$LOG" >&2
+  exit 1
+fi
 if grep -q 'ARK_NATIVE_BOOT_PROOF=FAIL' "$LOG"; then
   echo "ERROR: QEMU boot produced ARK_NATIVE_BOOT_PROOF=FAIL (qemu rc=$RC)" >&2
   tail -200 "$LOG" >&2
@@ -139,6 +145,12 @@ if grep -q 'ARK_NATIVE_BOOT_PROOF=FAIL' "$LOG"; then
 fi
 if ! grep -q 'ARK_NATIVE_BOOT_PROOF=PASS' "$LOG"; then
   echo "ERROR: QEMU boot did not produce ARK_NATIVE_BOOT_PROOF=PASS (qemu rc=$RC)" >&2
+  tail -200 "$LOG" >&2
+  exit 1
+fi
+
+if [[ "$RC" -ne 0 ]]; then
+  echo "ERROR: QEMU exited unsuccessfully after proof collection (qemu rc=$RC)" >&2
   tail -200 "$LOG" >&2
   exit 1
 fi
