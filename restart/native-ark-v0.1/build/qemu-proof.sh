@@ -1,19 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 0077
 IMAGE_ZST="${1:?usage: qemu-proof.sh arklinux-native-v0.1-x86_64.raw.zst}"
 OUTDIR="${2:-$(dirname "$IMAGE_ZST")/qemu-proof}"
 mkdir -p "$OUTDIR"
+chmod 0700 "$OUTDIR"
 RAW="$OUTDIR/arklinux-qemu.raw"
 LOG="$OUTDIR/serial.log"
 REUSE_RAW="${ARK_QEMU_REUSE_RAW:-0}"
-rm -f "$LOG"
-if [[ "$REUSE_RAW" == "1" ]]; then
-  [[ -f "$RAW" ]] || { echo "ERROR: reusable QEMU raw missing: $RAW" >&2; exit 1; }
-  printf 'Reusing preserved QEMU image: %s\n' "$RAW"
-else
-  rm -f "$RAW"
-  zstd -d --sparse "$IMAGE_ZST" -o "$RAW"
-fi
+RETAIN_FAILED_RAW="${ARK_QEMU_RETAIN_FAILED_RAW:-0}"
+[[ "$REUSE_RAW" == "0" ]] || {
+  echo "ERROR: mutable QEMU raw reuse is incompatible with release-image proof" >&2
+  exit 1
+}
+
+cleanup_qemu_raw(){
+  local rc=$?
+  trap - EXIT
+  if [[ -f "$RAW" ]]; then
+    if [[ "$rc" -ne 0 && "$RETAIN_FAILED_RAW" == "1" ]]; then
+      chmod 0600 "$RAW"
+      printf 'WARNING: retained failed QEMU disk contains sensitive first-boot state: %s\n' "$RAW" >&2
+    else
+      rm -f -- "$RAW"
+    fi
+  fi
+  exit "$rc"
+}
+trap cleanup_qemu_raw EXIT
+
+rm -f "$LOG" "$RAW"
+zstd -d --sparse "$IMAGE_ZST" -o "$RAW"
+chmod 0600 "$RAW"
 
 CODE="$(find /usr/share/edk2 -type f \( -name 'OVMF_CODE.4m.fd' -o -name 'OVMF_CODE.fd' \) | head -1)"
 VARS_SRC="$(find /usr/share/edk2 -type f \( -name 'OVMF_VARS.4m.fd' -o -name 'OVMF_VARS.fd' \) | head -1)"
@@ -54,8 +72,8 @@ if ! grep -q 'ARK_NATIVE_BOOT_PROOF=PASS' "$LOG"; then
   exit 1
 fi
 
-grep 'ARK_SOURCE_PROVENANCE_PROBE=PASS\|ARK_STATUS_PROBE=PASS\|ARK_INGESTION_PREVERIFICATION_PROBE=PASS\|ARK_INGESTION_DEDUPLICATION_PROBE=PASS\|ARK_ALATHEIA_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_REJECTION_PROBE=PASS\|ARK_ALATHEIA_VERIFICATION_PROBE=PASS\|ARK_INGESTION_PROBE=PASS\|ARK_INGESTION_PERSISTENCE_PROBE=PASS\|ARK_GRAVEYARD_UNVERIFIED_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_ADMISSION_PROBE=PASS\|ARK_GRAVEYARD_TAMPER_REJECTION_PROBE=PASS\|ARK_REAL_EMBEDDING_PROBE=PASS\|ARK_EVIDENCE_CONTINUITY_PROBE=PASS\|ARK_NATIVE_BOOT_PROOF=PASS' "$LOG" > "$OUTDIR/proof.txt"
+grep 'ARK_SOURCE_PROVENANCE_PROBE=PASS\|ARK_AGENT_IDENTITY_PROBE=PASS\|ARK_STATUS_PROBE=PASS\|ARK_INGESTION_PREVERIFICATION_PROBE=PASS\|ARK_INGESTION_DEDUPLICATION_PROBE=PASS\|ARK_ALATHEIA_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_REJECTION_PROBE=PASS\|ARK_ALATHEIA_VERIFICATION_PROBE=PASS\|ARK_INGESTION_PROBE=PASS\|ARK_INGESTION_PERSISTENCE_PROBE=PASS\|ARK_GRAVEYARD_UNVERIFIED_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_ADMISSION_PROBE=PASS\|ARK_GRAVEYARD_TAMPER_REJECTION_PROBE=PASS\|ARK_REAL_EMBEDDING_PROBE=PASS\|ARK_EVIDENCE_CONTINUITY_PROBE=PASS\|ARK_NATIVE_BOOT_PROOF=PASS' "$LOG" > "$OUTDIR/proof.txt"
 printf 'qemu_exit=%s\n' "$RC" >> "$OUTDIR/proof.txt"
 printf 'QEMU native boot proof passed.\n'
-[[ "$REUSE_RAW" == "1" ]] || rm -f "$RAW"
+rm -f -- "$RAW"
 
