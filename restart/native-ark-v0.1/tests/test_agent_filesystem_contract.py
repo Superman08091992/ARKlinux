@@ -80,8 +80,16 @@ class AgentFilesystemContractTests(unittest.TestCase):
         self.assertIn("ARK_QEMU_IMAGE_SHA256", qemu_proof)
         self.assertLess(
             qemu_proof.index("compressed image changed during QEMU proof"),
-            qemu_proof.index('> "$OUTDIR/proof.txt"'),
+            qemu_proof.index('PROOF_TMP="$(mktemp'),
         )
+        self.assertIn("ARK_QEMU_EXPECTED_IMAGE_SHA256", qemu_proof)
+        self.assertIn("ARK_QEMU_EXCLUSIVE_RUN_PROBE=PASS", qemu_proof)
+        self.assertIn('mv -f -- "$PROOF_TMP" "$OUTDIR/proof.txt"', qemu_proof)
+        self.assertLess(
+            qemu_proof.index('qemu_exit=%s\\n\' "$RC" >> "$PROOF_TMP"'),
+            qemu_proof.index('mv -f -- "$PROOF_TMP" "$OUTDIR/proof.txt"'),
+        )
+        self.assertNotIn('>> "$OUTDIR/proof.txt"', qemu_proof)
         self.assertIn("refusing to derive proof", qemu_proof)
         self.assertLess(
             qemu_proof.index("refusing to derive proof"),
