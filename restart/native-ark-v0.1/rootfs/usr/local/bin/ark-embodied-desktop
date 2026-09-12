@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+electron_bin=""
+if [[ -x /usr/bin/electron ]]; then
+  electron_bin=/usr/bin/electron
+else
+  mapfile -t candidates < <(find /usr/bin -maxdepth 1 -type f -executable -name 'electron[0-9]*' -print | sort -V)
+  if (( ${#candidates[@]} > 0 )); then
+    electron_bin="${candidates[-1]}"
+  fi
+fi
+[[ -n "$electron_bin" ]] || { echo "ERROR: no packaged Electron runtime found" >&2; exit 1; }
+exec "$electron_bin" /usr/lib/arklinux-shell/electron/main.cjs

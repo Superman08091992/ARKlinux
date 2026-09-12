@@ -1,0 +1,16 @@
+[Unit]
+Description=A.R.K. persistent 3D desktop navigator
+After=plasma-workspace.target
+PartOf=plasma-workspace.target
+
+[Service]
+Type=simple
+Environment=ARK_SHELL_URL=http://127.0.0.1:3000
+Environment=ARK_SHELL_FULLSCREEN=true
+ExecStartPre=/usr/local/sbin/ark-desktop-ready --timeout 180
+ExecStart=/usr/local/bin/ark-embodied-desktop
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=plasma-workspace.target

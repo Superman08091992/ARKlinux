@@ -3,4 +3,9 @@ set -euo pipefail
 export XDG_SESSION_TYPE=wayland
 export XDG_SESSION_DESKTOP=ARKlinux
 export XDG_CURRENT_DESKTOP=KDE
-exec startplasma-wayland
+export QT_QPA_PLATFORM='wayland;xcb'
+
+if [[ -x /usr/lib/plasma-dbus-run-session-if-needed ]]; then
+  exec /usr/lib/plasma-dbus-run-session-if-needed /usr/bin/startplasma-wayland
+fi
+exec /usr/bin/startplasma-wayland

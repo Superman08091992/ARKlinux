@@ -23,13 +23,74 @@ diagnose_runtime_stack(){
 
 wait_active(){
   local unit="$1"
-  local attempt
-  for attempt in {1..30}; do
+  local _attempt
+  for _attempt in {1..30}; do
     systemctl is-active --quiet "$unit" && return 0
     sleep 1
   done
   diagnose_unit "$unit"
   fail "inactive:$unit"
+}
+
+agent_socket_responds(){
+  local role="$1"
+  local socket_path="$2"
+  /usr/bin/runuser -u "ark-$role" -- /usr/bin/python - "$socket_path" "$role" <<'PY'
+import json
+import socket
+import sys
+
+socket_path, role = sys.argv[1:]
+operation = "__ark_boot_readiness_probe__"
+request = {"operation": operation, "payload": {}}
+client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+client.settimeout(2.0)
+try:
+    client.connect(socket_path)
+    client.sendall(
+        json.dumps(request, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        + b"\n"
+    )
+    data = b""
+    while b"\n" not in data and len(data) <= 65536:
+        chunk = client.recv(65536)
+        if not chunk:
+            break
+        data += chunk
+finally:
+    client.close()
+if len(data) > 65536 or b"\n" not in data:
+    raise SystemExit("agent readiness response is incomplete")
+response = json.loads(data.split(b"\n", 1)[0].decode("utf-8"))
+expected_error = f"operation {operation!r} is not allowed for role {role!r}"
+if response != {
+    "ok": False,
+    "ipc_error": True,
+    "error": expected_error,
+}:
+    raise SystemExit("agent readiness response is invalid")
+PY
+}
+
+wait_agent_ready(){
+  local role="$1"
+  local unit="ark-agent@$1.service"
+  local domain="/ark/agents/$1"
+  local public_key="/ark/agent-public-keys/$1/signing-key.json"
+  local socket="/run/ark/agents/$1/$1.sock"
+  local _attempt
+  for _attempt in {1..30}; do
+    if systemctl is-active --quiet "$unit" &&
+       [[ -s "$domain/private/signing-key.pem" ]] &&
+       [[ -s "$public_key" ]] &&
+       [[ -S "$socket" ]] &&
+       agent_socket_responds "$role" "$socket"; then
+      return 0
+    fi
+    sleep 1
+  done
+  diagnose_unit "$unit"
+  fail "agent_identity_not_ready:$role"
 }
 
 ROOT_CONTRACT="$(stat -c '%U:%G:%a' /)"
@@ -44,7 +105,7 @@ for runtime_path in /run/ark /run/ark/agents /run/ark/agents/kyle /run/ark/agent
   }
 done
 
-for mp in / /ark/memory /ark/evidence /ark/state /ark/kj /ark/graveyard /ark/models /ark/checkpoints /ark/quarantine /ark/storage; do
+for mp in / /ark/memory /ark/evidence /ark/state /ark/kj /ark/graveyard /ark/models /ark/checkpoints /ark/quarantine /ark/storage /ark/agents/kyle /ark/agents/aletheia /ark/agents/joey /ark/agents/hrm /ark/agents/kenny; do
   mountpoint -q "$mp" || fail "missing_mount:$mp"
 done
 
@@ -52,6 +113,40 @@ done
 [[ -f /ark/pair_mvp/pipeline.py && -f /ark/pair_mvp/alatheia.py ]] || fail 'missing:pinned_alatheia_runtime'
 [[ -f /etc/ark/ARK_GENESIS_COMMIT && -f /etc/ark/ALATHEIA_COMMIT ]] || fail 'missing:source_provenance'
 [[ ! -e /opt/ark && ! -L /opt/ark ]] || fail 'obsolete:/opt/ark'
+[[ -x /usr/local/sbin/ark-model-pull ]] || fail 'missing:ark-model-pull'
+[[ -r /usr/share/ark/model-catalog.json ]] || fail 'missing:model-catalog'
+[[ "$(stat -c '%U:%G:%a' /ark/models)" == 'root:ark-state:750' ]] || fail 'invalid:model-root-contract'
+[[ "$(stat -c '%U:%G:%a' /ark/models/ollama)" == 'ollama:ollama:750' ]] || fail 'invalid:ollama-model-store-contract'
+id -nG ollama | tr ' ' '\n' | grep -qx ark-state || fail 'invalid:ollama-model-store-membership'
+
+python - <<'PY' || fail 'invalid:model-catalog-contract'
+import json
+from pathlib import Path
+
+catalog = json.loads(Path('/usr/share/ark/model-catalog.json').read_text(encoding='utf-8'))
+if catalog.get('schema_version') != '1.0':
+    raise SystemExit('unsupported catalog schema')
+if catalog.get('provider') != 'ollama' or catalog.get('storage_path') != '/ark/models/ollama':
+    raise SystemExit('invalid catalog provider or storage path')
+models = {item['name']: item for item in catalog.get('models', [])}
+if not models:
+    raise SystemExit('catalog has no models')
+for name, model in models.items():
+    if (
+        model.get('route_state') != 'available'
+        or model.get('runtime_state') != 'paused'
+        or model.get('activation') != 'on_demand'
+        or model.get('preload') is not False
+        or model.get('keep_alive') != 0
+    ):
+        raise SystemExit(f'model is not paused/on-demand: {name}')
+for role, route in catalog.get('routes', {}).items():
+    if route.get('primary') not in models:
+        raise SystemExit(f'route references unknown primary: {role}')
+    if any(name not in models for name in route.get('alternatives', [])):
+        raise SystemExit(f'route references unknown alternative: {role}')
+print('ARK_MODEL_CATALOG_PROBE=PASS state=available runtime=paused')
+PY
 
 ARK_GENESIS_COMMIT="$(tr -d '\r\n' < /etc/ark/ARK_GENESIS_COMMIT)"
 ALATHEIA_COMMIT="$(tr -d '\r\n' < /etc/ark/ALATHEIA_COMMIT)"
@@ -62,6 +157,89 @@ printf 'ARK_SOURCE_PROVENANCE_PROBE=PASS ark_genesis=%s alatheia=%s\n' "$ARK_GEN
 for unit in ollama.service ark-embedding-model.service ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service; do
   wait_active "$unit"
 done
+wait_active ark-batch-executor.socket
+[[ -S /run/ark/batch-executor.sock ]] || fail 'missing_batch_executor_socket'
+[[ "$(stat -c '%U:%G:%a' /var/lib/ark/batch-executor/claims)" == 'root:root:700' ]] || fail 'invalid_batch_claim_store'
+
+declare -A AGENT_KEY_ID_OWNERS=()
+for role in kyle aletheia joey hrm kenny; do
+  wait_agent_ready "$role"
+  printf 'ARK_AGENT_SOCKET_PROBE=PASS role=%s\n' "$role"
+  domain="/ark/agents/$role"
+  [[ "$(stat -c '%U:%G:%a' "$domain")" == "ark-$role:ark-agent-audit:750" ]] || fail "invalid_agent_domain:$role"
+  [[ "$(stat -c '%U:%G:%a' "$domain/ledger")" == "ark-$role:ark-agent-audit:2750" ]] || fail "invalid_agent_ledger:$role"
+  [[ -s "$domain/private/signing-key.pem" ]] || fail "missing_agent_private_key:$role"
+  [[ "$(stat -c '%U:%G:%a' "$domain/private")" == "ark-$role:ark-$role-ipc:700" ]] || fail "invalid_agent_private_directory:$role"
+  [[ "$(stat -c '%U:%a' "$domain/private/signing-key.pem")" == "ark-$role:600" ]] || fail "invalid_agent_private_key:$role"
+  [[ -s "/ark/agent-public-keys/$role/signing-key.json" ]] || fail "missing_agent_public_key:$role"
+  [[ "$(stat -c '%U:%a' "/ark/agent-public-keys/$role/signing-key.json")" == "ark-$role:644" ]] ||
+    fail "invalid_agent_public_key:$role"
+  if ! identity_marker="$(
+    /usr/bin/runuser -u "ark-$role" -- /usr/bin/python - "$role" <<'PY'
+import base64
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+role = sys.argv[1]
+private_path = Path(f"/ark/agents/{role}/private/signing-key.pem")
+public_path = Path(f"/ark/agent-public-keys/{role}/signing-key.json")
+private_key = serialization.load_pem_private_key(private_path.read_bytes(), password=None)
+if not isinstance(private_key, Ed25519PrivateKey):
+    raise SystemExit("private key is not Ed25519")
+public_key = private_key.public_key()
+raw_public = public_key.public_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PublicFormat.Raw,
+)
+expected = {
+    "role": role,
+    "algorithm": "ed25519",
+    "key_id": "ed25519:" + hashlib.sha256(raw_public).hexdigest()[:32],
+    "public_key": base64.b64encode(raw_public).decode("ascii"),
+}
+observed = json.loads(public_path.read_text(encoding="utf-8"))
+if observed != expected:
+    raise SystemExit("public record does not match private identity")
+challenge = f"ARK-NATIVE-BOOT-IDENTITY-PROBE:{role}".encode("utf-8")
+signature = private_key.sign(challenge)
+public_key.verify(signature, challenge)
+print(f"ARK_AGENT_IDENTITY_PROBE=PASS role={role} key_id={expected['key_id']}")
+PY
+  )"; then
+    fail "invalid_agent_identity:$role"
+  fi
+  [[ "$identity_marker" =~ ^ARK_AGENT_IDENTITY_PROBE=PASS\ role=$role\ key_id=(ed25519:[0-9a-f]{32})$ ]] ||
+    fail "invalid_agent_identity_marker:$role"
+  key_id="${BASH_REMATCH[1]}"
+  prior_role="${AGENT_KEY_ID_OWNERS[$key_id]:-}"
+  [[ -z "$prior_role" ]] || fail "duplicate_agent_key_id:$role:$prior_role:$key_id"
+  AGENT_KEY_ID_OWNERS["$key_id"]="$role"
+  printf '%s\n' "$identity_marker"
+done
+printf 'ARK_AGENT_IDENTITY_SET_PROBE=PASS roles=5 unique_key_ids=5\n'
+
+peer_pairs=0
+for reader in kyle aletheia joey hrm kenny; do
+  for owner in kyle aletheia joey hrm kenny; do
+    [[ "$reader" == "$owner" ]] && continue
+    /usr/bin/runuser -u "ark-$reader" -- /usr/bin/test ! -r "/ark/agents/$owner/private/signing-key.pem" ||
+      fail "peer_private_key_readable:$reader:$owner"
+    /usr/bin/runuser -u "ark-$reader" -- /usr/bin/test -r "/ark/agents/$owner/ledger" ||
+      fail "peer_ledger_unreadable:$reader:$owner"
+    /usr/bin/runuser -u "ark-$reader" -- /usr/bin/test -x "/ark/agents/$owner/ledger" ||
+      fail "peer_ledger_unsearchable:$reader:$owner"
+    /usr/bin/runuser -u "ark-$reader" -- /usr/bin/test ! -w "/ark/agents/$owner/ledger" ||
+      fail "peer_ledger_writable:$reader:$owner"
+    ((peer_pairs += 1))
+  done
+done
+[[ "$peer_pairs" -eq 20 ]] || fail "invalid_peer_access_pair_count:$peer_pairs"
+printf 'ARK_AGENT_CROSS_ROLE_ACCESS_PROBE=PASS private=isolated peer_ledgers=read_only pairs=%s\n' "$peer_pairs"
 
 python - <<'PY' || fail 'status_probe_failed'
 import json

@@ -1,0 +1,11 @@
+# ARKlinux NVIDIA Pascal driver source lock.
+# The AUR commit is immutable and its PKGBUILD verifies every source, including
+# NVIDIA's proprietary driver payload, before package construction.
+NVIDIA_PASCAL_DRIVER_BRANCH=580
+NVIDIA_PASCAL_DRIVER_VERSION=580.178.04
+NVIDIA_PASCAL_AUR_REPOSITORY=https://aur.archlinux.org/nvidia-580xx-utils.git
+NVIDIA_PASCAL_AUR_COMMIT=85c38619ce2267787d0515baa443739cb9d2883c
+NVIDIA_PASCAL_RUNFILE_SHA256=5975a86ee45bffcb626f51ae33d1169b108186a2ea47ad651e72f13fa4b6d6f9
+NVIDIA_PASCAL_TARGET_PCI_IDS="10de:1d01 10de:1c31"
+NVIDIA_PASCAL_TORCH_VERSION=2.7.1
+NVIDIA_PASCAL_TORCH_INDEX=https://download.pytorch.org/whl/cu126

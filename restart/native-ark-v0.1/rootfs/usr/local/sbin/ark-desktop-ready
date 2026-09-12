@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+timeout=90
+if [[ "${1:-}" == "--timeout" ]]; then
+  timeout="${2:-}"
+fi
+[[ "$timeout" =~ ^[0-9]+$ ]] || { echo "ERROR: timeout must be an integer" >&2; exit 2; }
+
+deadline=$((SECONDS + timeout))
+while (( SECONDS < deadline )); do
+  if /usr/bin/curl --fail --silent --show-error --max-time 4 \
+    http://127.0.0.1:3000/api/ark/health >/dev/null; then
+    echo "ARK_EMBODIED_DESKTOP_READY=PASS"
+    exit 0
+  fi
+  sleep 2
+done
+
+echo "ERROR: A.R.K. embodied desktop did not become ready within ${timeout}s" >&2
+exit 1

@@ -5,7 +5,7 @@ This file separates host/OS packages from isolated Python/model dependencies. AI
 ## 1. Base, build, boot and filesystem — pacman
 
 - base, base-devel
-- linux, linux-headers, linux-firmware
+- linux-lts, linux-lts-headers, linux-firmware
 - btrfs-progs, snapper
 - dosfstools, gptfdisk, efibootmgr
 - cryptsetup, tpm2-tools
@@ -14,22 +14,74 @@ This file separates host/OS packages from isolated Python/model dependencies. AI
 - git, openssh, rsync, curl, wget
 - jq, ripgrep, fd, zstd, tar, unzip
 - cmake, ninja, clang, llvm, rust
-- python, python-pip, python-setuptools, python-wheel, python-virtualenv
+- python, python-cryptography, python-pip, python-setuptools, python-wheel, python-virtualenv
 
-## 2. Hardware, GPU and CUDA — pacman / optional hardware profile
+## 2. Hardware, GPU and CUDA — detected hardware profile
 
-- nvidia-open, nvidia-utils, nvidia-settings
-- cuda, cudnn
+- `linux-lts` and `linux-lts-headers` are the native baseline. The release
+  image uses the non-autodetected fallback module set for its first boot so an
+  image built under Hyper-V or QEMU cannot omit the workstation's DRM driver.
+- `ark-display-preflight` runs before greetd. It permits the graphical target
+  only when the detected GPU binding and boot kernel are a proven combination;
+  otherwise ARKlinux starts a local tty1 recovery login instead of repeatedly
+  modesetting. The unused ttyS0 login is masked while serial proof output remains.
+
+- `ark-gpu-detect` inventories display-class PCI devices and records the active kernel binding
+- `nvidia-pascal`: pinned proprietary `nvidia-580xx-dkms`, `nvidia-580xx-utils`, and `opencl-nvidia-580xx`
+- `nvidia-open`: nvidia-open-dkms, nvidia-utils, nvidia-settings (Turing or newer only)
+- system-default: mesa, libdrm, vulkan-icd-loader, vulkan-tools
+- cuda, cudnn (not installed for Pascal; CUDA 13 removed compute capability 6.1 support)
 - nvidia-container-toolkit
 - vulkan-icd-loader, vulkan-tools
 - mesa
 - lm_sensors, pciutils, usbutils, smartmontools, nvme-cli
 
-NVIDIA packages are an optional release profile and should only be activated for compatible hardware.
+The native HP Z4 inventory contains `10de:1d01` (GT 1030) and `10de:1c31`
+(Quadro P2200). Both are Pascal. The open kernel modules are incompatible with
+them, so the automatic profile selects proprietary R580. Unknown or mixed
+NVIDIA generations require an explicit profile and do not trigger package
+changes.
+
+The R580 package recipe is locked to one immutable AUR commit and verifies the
+NVIDIA runfile SHA-256 before building as the unprivileged `nobody` account.
+The installer selects headers for every supported installed kernel, replaces
+conflicting NVIDIA packages only after the locked packages have built, enables
+early `nvidia`, `nvidia_modeset`, `nvidia_uvm`, and `nvidia_drm` loading, then
+verifies the module for each installed kernel before declaring success.
+Installation is an explicit administrator action:
+
+```bash
+sudo ark-gpu-install auto
+sudo reboot
+sudo ark-gpu-detect --verify
+nvidia-smi
+```
+
+`ark-bootstrap-ai auto` uses the same selection. On Pascal it installs the
+R580 driver, leaves Ollama on its CPU runtime, and installs the pinned PyTorch
+2.7.1 CUDA 12.6 wheel that remains usable on compute capability 6.1. It does
+not install CUDA 13 or vLLM; those current compute paths no longer support the
+two Pascal cards. Switching an existing installation to Pascal removes stale
+CUDA 13, cuDNN, Ollama CUDA, vLLM, Triton, and NCCL state. AI profile changes
+are built beside the live venv and activated only after installation succeeds;
+the previous venv is retained for rollback.
+
+For an already-flashed native image, run the offline repair from a known-good
+Arch installation. It refuses the active root filesystem, validates both
+target partitions, snapshots the OS and package state, moves the target to the
+LTS kernel, installs the complete Plasma runtime and pinned R580 driver, updates
+the systemd-boot entries, and verifies the offline module/initramfs before it
+allows a reboot:
+
+```bash
+sudo restart/native-ark-v0.1/tools/ark-repair-installed-display \
+  /dev/target-root-partition /dev/target-efi-partition
+```
 
 ## 3. Desktop/compositor/toolkits — pacman
 
 - plasma-desktop, plasma-workspace, kwin
+- nodejs-lts-krypton and the Arch `electron` stable meta-package
 - qt6-base, qt6-declarative, qt6-wayland, qt6-tools
 - qt6-webengine, qt6-webchannel, qt6-websockets
 - xorg-xwayland
@@ -37,6 +89,20 @@ NVIDIA packages are an optional release profile and should only be activated for
 - pyside6, python-pyqt6, python-pyqt6-webengine
 - ghostwriter, sonnet
 - thunar, firefox, foot
+
+The embodied desktop is a required image input, not an optional application.
+`config/arklinux-shell.lock` pins the exact ARKlinux-shell commit and the build
+refuses an overlay with a different provenance stamp. At boot,
+`ark-desktop-core.target` requires the native action broker and loopback shell
+server. The shell server does not report ready until both the A.R.K. runtime and
+broker are healthy. Plasma then runs the persistent 3D navigator as a restarting
+user service.
+
+Routine navigation is resolved deterministically, authorized before the UI
+changes, and finalized with a one-use permit. The broker writes action type and
+cryptographic digests to a hash-linked ledger; it does not retain the natural
+language command, URL, query, or completion message. Non-navigation requests go
+to Kyle through the native intake API and retain the agent approval boundary.
 
 ## 4. Accessibility, audio and media — pacman
 
@@ -66,9 +132,13 @@ NVIDIA packages are an optional release profile and should only be activated for
 ## 7. Local inference/model host — pacman / isolated runtime
 
 - `ollama` is part of the native base image and is supervised by `ollama.service`
+- Ollama stores all model blobs under the dedicated `/ark/models/ollama` Btrfs-backed model location
 - `nomic-embed-text:latest` is provisioned by `ark-embedding-model.service`; the exact resolved Ollama digest is recorded before use
+- `/usr/share/ark/model-catalog.json` assigns the optional current-hardware models to agent roles
+- `sudo ark-model-pull` explicitly downloads that bundle and writes a verified inventory; it never runs as a boot-time downloader
+- optional reasoning and vision models are routed as available/on-demand with preload disabled and `keep_alive=0`, so they remain paused outside an active request
 - the real embedding contract is `ark-semantic-v1`, L2-normalized, exactly 768 dimensions
-- ollama-cuda may replace the CPU package when the NVIDIA profile is enabled
+- ollama-cuda may replace the CPU package only for a compatible nvidia-open profile
 - llama.cpp/ggml CUDA capability may be added as a separate package profile
 
 ## 8. Isolated Python AI environment — venv/container only
@@ -115,6 +185,9 @@ Playwright browser binaries/system libraries must be installed during image/runt
 These are architecture components rather than third-party packages:
 
 - low-level process supervisor contracts: Kyle, Aletheia, Joey, HRM, Kenny
+- per-agent Btrfs filesystem domains with private Ed25519 signing identities
+- independently signed, hash-linked agent ledgers and an H.R.M. reference-only master ledger
+- one-decision immutable change batches with preflight, postflight, and rollback manifests
 - model router
 - KJ Joey→HRM-accounted→Kenny bridge
 - append-only evidence/event ledger
@@ -134,6 +207,9 @@ These are architecture components rather than third-party packages:
 - Btrfs `@ark` is mounted at `/`.
 - `/ark` is a native top-level ARKlinux system hierarchy.
 - `/run/ark` is volatile IPC/runtime state.
+- `/ark/agents/{kyle,aletheia,joey,hrm,kenny}` are separate persistent
+  role-owned Btrfs subvolumes. H.R.M. can read their audit ledgers but cannot
+  read their private signing keys or write their source records.
 - No legacy installed-root alias is created on new images.
 - KJ is not the event ledger and not the display adapter.
 - The GUI does not connect directly to low-level agent sockets or KJ.

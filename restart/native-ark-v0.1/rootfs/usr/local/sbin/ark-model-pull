@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CATALOG="${ARK_MODEL_CATALOG:-/usr/share/ark/model-catalog.json}"
+OLLAMA_URL="${ARK_OLLAMA_URL:-http://127.0.0.1:11434}"
+export OLLAMA_HOST="$OLLAMA_URL"
+BUNDLE="current-hardware"
+INVENTORY="${ARK_MODEL_INVENTORY:-/var/lib/ark/model-inventory.json}"
+DRY_RUN=0
+LIST_ONLY=0
+declare -a REQUESTED_MODELS=()
+
+usage(){
+  cat <<'EOF'
+Usage: sudo ark-model-pull [OPTIONS]
+
+Download A.R.K.'s optional local models into /ark/models/ollama. Models are
+registered as available but remain paused (unloaded) until an agent uses one.
+
+Options:
+  --bundle NAME   Pull every default model in a catalog bundle.
+                  Default: current-hardware
+  --model NAME    Pull one cataloged model. May be repeated.
+  --list          Show the catalog and current installation state; do not pull.
+  --dry-run       Show what would be pulled without downloading it.
+  -h, --help      Show this help.
+EOF
+}
+
+fail(){
+  printf 'ARK_MODEL_PULL=FAIL detail=%q\n' "$*" >&2
+  exit 1
+}
+
+while (($#)); do
+  case "$1" in
+    --bundle)
+      (($# >= 2)) || fail 'missing value for --bundle'
+      BUNDLE="$2"
+      shift 2
+      ;;
+    --model)
+      (($# >= 2)) || fail 'missing value for --model'
+      REQUESTED_MODELS+=("$2")
+      shift 2
+      ;;
+    --list)
+      LIST_ONLY=1
+      shift
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "unknown option: $1"
+      ;;
+  esac
+done
+
+[[ ${EUID:-$(id -u)} -eq 0 ]] || fail 'run with sudo so the verified inventory can be updated'
+[[ -r "$CATALOG" ]] || fail "catalog is not readable: $CATALOG"
+command -v jq >/dev/null 2>&1 || fail 'jq is not installed'
+command -v curl >/dev/null 2>&1 || fail 'curl is not installed'
+command -v ollama >/dev/null 2>&1 || fail 'ollama is not installed'
+
+jq -e '
+  .schema_version == "1.0" and
+  .provider == "ollama" and
+  (.storage_path | type == "string") and
+  (.models | type == "array") and
+  (.routes | type == "object")
+' "$CATALOG" >/dev/null || fail 'model catalog failed structural validation'
+
+MODEL_STORE="$(jq -r '.storage_path' "$CATALOG")"
+[[ "$MODEL_STORE" == /ark/models/* ]] || fail "catalog storage path is outside /ark/models: $MODEL_STORE"
+[[ -d "$MODEL_STORE" ]] || fail "model store does not exist: $MODEL_STORE"
+[[ "$(stat -c '%U:%G:%a' "$MODEL_STORE")" == 'ollama:ollama:750' ]] \
+  || fail "model store ownership or mode is invalid: $MODEL_STORE"
+id -nG ollama | tr ' ' '\n' | grep -qx ark-state \
+  || fail 'Ollama is not permitted to traverse the protected model root'
+
+mapfile -t CATALOG_MODELS < <(jq -r '.models[].name' "$CATALOG")
+if ((${#REQUESTED_MODELS[@]} == 0)); then
+  mapfile -t REQUESTED_MODELS < <(
+    jq -r --arg bundle "$BUNDLE" \
+      '.models[] | select(.bundle == $bundle and .pull_by_default == true) | .name' \
+      "$CATALOG"
+  )
+  ((${#REQUESTED_MODELS[@]} > 0)) || fail "catalog bundle has no default models: $BUNDLE"
+fi
+
+for model in "${REQUESTED_MODELS[@]}"; do
+  jq -e --arg model "$model" '.models[] | select(.name == $model)' "$CATALOG" >/dev/null \
+    || fail "model is not present in the approved catalog: $model"
+done
+
+if ! systemctl is-active --quiet ollama.service; then
+  systemctl start ollama.service
+fi
+
+for _attempt in {1..30}; do
+  curl -fsS "$OLLAMA_URL/api/tags" >/dev/null 2>&1 && break
+  sleep 1
+done
+curl -fsS "$OLLAMA_URL/api/tags" >/dev/null 2>&1 || fail "Ollama is not responding at $OLLAMA_URL"
+
+installed_models(){
+  curl -fsS "$OLLAMA_URL/api/tags" | jq -r '.models[]? | (.model // .name)'
+}
+
+if ((LIST_ONLY)); then
+  mapfile -t INSTALLED_MODELS < <(installed_models)
+  printf '%-30s %-12s %-12s %s\n' MODEL CATALOG INSTALLATION RUNTIME
+  for model in "${CATALOG_MODELS[@]}"; do
+    state=missing
+    printf '%s\n' "${INSTALLED_MODELS[@]}" | grep -Fxq "$model" && state=installed
+    printf '%-30s %-12s %-12s %s\n' "$model" available "$state" paused
+  done
+  exit 0
+fi
+
+for model in "${REQUESTED_MODELS[@]}"; do
+  if installed_models | grep -Fxq "$model"; then
+    printf 'ARK_MODEL_PULL=SKIP model=%s reason=already_installed\n' "$model"
+    continue
+  fi
+  if ((DRY_RUN)); then
+    printf 'ARK_MODEL_PULL=DRY_RUN model=%s destination=%s\n' "$model" "$MODEL_STORE"
+    continue
+  fi
+  printf 'ARK_MODEL_PULL=START model=%s destination=%s\n' "$model" "$MODEL_STORE"
+  ollama pull "$model"
+  installed_models | grep -Fxq "$model" || fail "Ollama did not report the pulled model: $model"
+  ollama stop "$model" >/dev/null 2>&1 || true
+  printf 'ARK_MODEL_PULL=PASS model=%s runtime=paused\n' "$model"
+done
+
+if ((DRY_RUN)); then
+  exit 0
+fi
+
+install -d -m 0770 -o arkd -g ark-state "$(dirname "$INVENTORY")"
+TAGS_FILE="$(mktemp /var/lib/ark/.ollama-tags.XXXXXX)"
+INVENTORY_TMP="$(mktemp /var/lib/ark/.model-inventory.XXXXXX)"
+trap 'rm -f "$TAGS_FILE" "$INVENTORY_TMP"' EXIT
+curl -fsS "$OLLAMA_URL/api/tags" > "$TAGS_FILE"
+python - "$CATALOG" "$TAGS_FILE" "$INVENTORY_TMP" <<'PY'
+from __future__ import annotations
+
+import datetime
+import json
+import sys
+from pathlib import Path
+
+catalog_path, tags_path, output_path = map(Path, sys.argv[1:])
+catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+tags = json.loads(tags_path.read_text(encoding="utf-8"))
+installed = {
+    str(item.get("model") or item.get("name")): item
+    for item in tags.get("models", [])
+    if item.get("model") or item.get("name")
+}
+records = []
+for model in catalog["models"]:
+    name = model["name"]
+    observed = installed.get(name)
+    records.append(
+        {
+            "name": name,
+            "catalog_state": model["route_state"],
+            "installation_state": "installed" if observed else "missing",
+            "runtime_state": "paused",
+            "activation": model["activation"],
+            "preload": False,
+            "keep_alive": model["keep_alive"],
+            "digest": (observed or {}).get("digest"),
+            "size": (observed or {}).get("size"),
+        }
+    )
+inventory = {
+    "schema_version": "1.0",
+    "catalog_id": catalog["catalog_id"],
+    "provider": "ollama",
+    "storage_path": catalog["storage_path"],
+    "observed_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "models": records,
+    "routes": catalog["routes"],
+}
+output_path.write_text(json.dumps(inventory, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+chown arkd:ark-state "$INVENTORY_TMP"
+chmod 0640 "$INVENTORY_TMP"
+mv -f "$INVENTORY_TMP" "$INVENTORY"
+rm -f "$TAGS_FILE"
+trap - EXIT
+
+printf 'ARK_MODEL_BUNDLE=PASS bundle=%s inventory=%s runtime=paused\n' "$BUNDLE" "$INVENTORY"
