@@ -194,6 +194,9 @@ class DisplayContractTests(unittest.TestCase):
         self.assertIn("DISPLAY WAYLAND_DISPLAY", build)
         self.assertIn('systemctl --root="$MNT" enable', build)
         self.assertNotIn('arch-chroot "$MNT" systemctl enable', build)
+        self.assertIn("validate_guest_contract runtime_payload", build)
+        self.assertIn("native A.R.K. contract failed: $label", build)
+        self.assertNotIn('arch-chroot "$MNT" /bin/bash -lc', build)
 
 
 class DisplayPreflightTests(unittest.TestCase):
