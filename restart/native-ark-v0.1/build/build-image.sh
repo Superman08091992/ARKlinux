@@ -31,11 +31,14 @@ KPARTX_ACTIVE=0
 stage(){ printf '\n==> %s\n' "$*"; }
 
 cleanup(){
-  set +e
-  mountpoint -q "$MNT/boot" && umount "$MNT/boot"
-  while mountpoint -q "$MNT"; do umount -R "$MNT" 2>/dev/null || break; done
-  if [[ "$KPARTX_ACTIVE" == "1" && -n "$LOOP" ]]; then kpartx -d "$LOOP" 2>/dev/null || true; fi
-  [[ -n "$LOOP" ]] && losetup -d "$LOOP" 2>/dev/null || true
+  (
+    # Keep best-effort trap cleanup from changing errexit in the caller.
+    set +e
+    mountpoint -q "$MNT/boot" && umount "$MNT/boot"
+    while mountpoint -q "$MNT"; do umount -R "$MNT" 2>/dev/null || break; done
+    if [[ "$KPARTX_ACTIVE" == "1" && -n "$LOOP" ]]; then kpartx -d "$LOOP" 2>/dev/null || true; fi
+    [[ -n "$LOOP" ]] && losetup -d "$LOOP" 2>/dev/null || true
+  )
 }
 trap cleanup EXIT
 
@@ -218,6 +221,9 @@ arch-chroot "$MNT" /bin/bash -lc '
 arch-chroot "$MNT" pacman-key --init
 arch-chroot "$MNT" pacman-key --populate archlinux
 arch-chroot "$MNT" pacman-key --updatedb
+# pacman-key may leave its image-local gpg-agent alive. Stop that exact agent
+# before final unmount so it cannot retain the guest Btrfs filesystem.
+arch-chroot "$MNT" env GNUPGHOME=/etc/pacman.d/gnupg gpgconf --kill gpg-agent
 
 stage "generate locale"
 arch-chroot "$MNT" locale-gen
@@ -347,4 +353,21 @@ cp "$ARK_GENESIS_LOCK" "$OUT/evidence/ark-genesis.lock"
 cp "$ARKLINUX_SHELL_LOCK" "$OUT/evidence/arklinux-shell.lock"
 
 stage "finalize and compress image"
-sync; cleanup; LOOP=""; KPARTX_ACTIVE=0; (cd "$OUT" && sha256sum "$(basename "$IMG")" > RAW-SHA256SUMS); zstd -19 -T0 --rm "$IMG" -o "$COMPRESSED"; (cd "$OUT" && sha256sum "$(basename "$COMPRESSED")" > SHA256SUMS); printf 'ARKlinux native release image: %s\n' "$COMPRESSED"
+sync
+cleanup
+if findmnt -rnR -M "$MNT" >/dev/null 2>&1; then
+  echo "ERROR: refusing to finalize while the guest filesystem remains mounted: $MNT" >&2
+  findmnt -R -M "$MNT" >&2 || true
+  exit 1
+fi
+if losetup --list --noheadings --raw --output NAME --associated "$IMG" 2>/dev/null | grep -q .; then
+  echo "ERROR: refusing to finalize while a loop device remains attached to: $IMG" >&2
+  losetup --list --output NAME,BACK-FILE --associated "$IMG" >&2 || true
+  exit 1
+fi
+LOOP=""
+KPARTX_ACTIVE=0
+(cd "$OUT" && sha256sum "$(basename "$IMG")" > RAW-SHA256SUMS)
+zstd -19 -T0 --rm "$IMG" -o "$COMPRESSED"
+(cd "$OUT" && sha256sum "$(basename "$COMPRESSED")" > SHA256SUMS)
+printf 'ARKlinux native release image: %s\n' "$COMPRESSED"
