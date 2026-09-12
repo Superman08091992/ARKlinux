@@ -15,19 +15,26 @@ QEMU_RUNNER_PID=""
   exit 1
 }
 
-cleanup_qemu_raw(){
-  local rc=$?
+terminate_qemu_group(){
+  local group_pid="$1"
   local attempt
-  trap - EXIT INT TERM HUP
-  if [[ -n "${QEMU_RUNNER_PID:-}" ]] && kill -0 "$QEMU_RUNNER_PID" 2>/dev/null; then
-    kill -TERM -- "-$QEMU_RUNNER_PID" 2>/dev/null || true
+  if kill -0 -- "-$group_pid" 2>/dev/null; then
+    kill -TERM -- "-$group_pid" 2>/dev/null || true
     for attempt in {1..10}; do
-      kill -0 "$QEMU_RUNNER_PID" 2>/dev/null || break
+      kill -0 -- "-$group_pid" 2>/dev/null || break
       sleep 0.2
     done
-    if kill -0 "$QEMU_RUNNER_PID" 2>/dev/null; then
-      kill -KILL -- "-$QEMU_RUNNER_PID" 2>/dev/null || true
+    if kill -0 -- "-$group_pid" 2>/dev/null; then
+      kill -KILL -- "-$group_pid" 2>/dev/null || true
     fi
+  fi
+}
+
+cleanup_qemu_raw(){
+  local rc=$?
+  trap - EXIT INT TERM HUP
+  if [[ -n "${QEMU_RUNNER_PID:-}" ]]; then
+    terminate_qemu_group "$QEMU_RUNNER_PID"
     wait "$QEMU_RUNNER_PID" 2>/dev/null || true
   fi
   if [[ -f "$RAW" ]]; then
@@ -70,13 +77,14 @@ STOPPED_ON_MARKER=0
 while kill -0 "$QEMU_RUNNER_PID" 2>/dev/null; do
   if grep -q 'ARK_NATIVE_BOOT_PROOF=PASS\|ARK_NATIVE_BOOT_PROOF=FAIL' "$LOG" 2>/dev/null; then
     STOPPED_ON_MARKER=1
-    kill -TERM -- "-$QEMU_RUNNER_PID" 2>/dev/null || true
+    terminate_qemu_group "$QEMU_RUNNER_PID"
     break
   fi
   sleep 1
 done
 wait "$QEMU_RUNNER_PID"
 RC=$?
+terminate_qemu_group "$QEMU_RUNNER_PID"
 QEMU_RUNNER_PID=""
 if [[ "$STOPPED_ON_MARKER" == "1" ]] && grep -q 'ARK_NATIVE_BOOT_PROOF=PASS' "$LOG"; then
   RC=0
@@ -89,13 +97,21 @@ if ! grep -q 'ARK_NATIVE_BOOT_PROOF=PASS' "$LOG"; then
   exit 1
 fi
 
-grep 'ARK_SOURCE_PROVENANCE_PROBE=PASS\|ARK_AGENT_IDENTITY_PROBE=PASS\|ARK_STATUS_PROBE=PASS\|ARK_INGESTION_PREVERIFICATION_PROBE=PASS\|ARK_INGESTION_DEDUPLICATION_PROBE=PASS\|ARK_ALATHEIA_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_REJECTION_PROBE=PASS\|ARK_ALATHEIA_VERIFICATION_PROBE=PASS\|ARK_INGESTION_PROBE=PASS\|ARK_INGESTION_PERSISTENCE_PROBE=PASS\|ARK_GRAVEYARD_UNVERIFIED_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_ADMISSION_PROBE=PASS\|ARK_GRAVEYARD_TAMPER_REJECTION_PROBE=PASS\|ARK_REAL_EMBEDDING_PROBE=PASS\|ARK_EVIDENCE_CONTINUITY_PROBE=PASS\|ARK_NATIVE_BOOT_PROOF=PASS' "$LOG" > "$OUTDIR/proof.txt"
+grep 'ARK_SOURCE_PROVENANCE_PROBE=PASS\|ARK_AGENT_IDENTITY_PROBE=PASS\|ARK_AGENT_IDENTITY_UNIQUENESS_PROBE=PASS\|ARK_AGENT_CROSS_ROLE_ACCESS_PROBE=PASS\|ARK_STATUS_PROBE=PASS\|ARK_INGESTION_PREVERIFICATION_PROBE=PASS\|ARK_INGESTION_DEDUPLICATION_PROBE=PASS\|ARK_ALATHEIA_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_REJECTION_PROBE=PASS\|ARK_ALATHEIA_VERIFICATION_PROBE=PASS\|ARK_INGESTION_PROBE=PASS\|ARK_INGESTION_PERSISTENCE_PROBE=PASS\|ARK_GRAVEYARD_UNVERIFIED_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_ADMISSION_PROBE=PASS\|ARK_GRAVEYARD_TAMPER_REJECTION_PROBE=PASS\|ARK_REAL_EMBEDDING_PROBE=PASS\|ARK_EVIDENCE_CONTINUITY_PROBE=PASS\|ARK_NATIVE_BOOT_PROOF=PASS' "$LOG" > "$OUTDIR/proof.txt"
 for role in kyle aletheia joey hrm kenny; do
   grep -Eq "ARK_AGENT_IDENTITY_PROBE=PASS role=$role key_id=ed25519:[0-9a-f]{32}" "$OUTDIR/proof.txt" || {
     echo "ERROR: QEMU proof is missing the verified identity marker for $role" >&2
     exit 1
   }
 done
+grep -qx 'ARK_AGENT_IDENTITY_UNIQUENESS_PROBE=PASS roles=5' "$OUTDIR/proof.txt" || {
+  echo "ERROR: QEMU proof is missing the agent identity uniqueness marker" >&2
+  exit 1
+}
+grep -qx 'ARK_AGENT_CROSS_ROLE_ACCESS_PROBE=PASS private=isolated peer_ledgers=read_only pairs=20' "$OUTDIR/proof.txt" || {
+  echo "ERROR: QEMU proof is missing the cross-role access marker" >&2
+  exit 1
+}
 printf 'ARK_AGENT_IDENTITY_SET_PROBE=PASS roles=5\n' >> "$OUTDIR/proof.txt"
 printf 'qemu_exit=%s\n' "$RC" >> "$OUTDIR/proof.txt"
 printf 'QEMU native boot proof passed.\n'
