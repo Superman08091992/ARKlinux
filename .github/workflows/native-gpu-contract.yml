@@ -32,7 +32,9 @@ jobs:
             restart/native-ark-v0.1/rootfs/usr/local/bin/ark-bootstrap-ai \
             restart/native-ark-v0.1/rootfs/usr/local/bin/ark-embodied-desktop \
             restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-desktop-ready \
+            restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-boot-proof \
             restart/native-ark-v0.1/build/build-image.sh \
+            restart/native-ark-v0.1/build/qemu-proof.sh \
             restart/native-ark-v0.1/tools/ark-repair-installed-display
           shellcheck -S warning \
             restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-gpu-install \
