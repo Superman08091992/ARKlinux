@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 0077
-IMAGE_ZST="${1:?usage: qemu-proof.sh arklinux-native-v0.1-x86_64.raw.zst}"
-OUTDIR="${2:-$(dirname "$IMAGE_ZST")/qemu-proof}"
+IMAGE_ZST_INPUT="${1:?usage: qemu-proof.sh arklinux-native-v0.1-x86_64.raw.zst}"
+IMAGE_ZST="$(realpath -m "$IMAGE_ZST_INPUT")"
+OUTDIR="$(realpath -m "${2:-$(dirname "$IMAGE_ZST")/qemu-proof}")"
+mkdir -p "$(dirname "$OUTDIR")"
+QEMU_LOCK="$OUTDIR.lock"
+exec {QEMU_LOCK_FD}> "$QEMU_LOCK"
+if ! flock -n "$QEMU_LOCK_FD"; then
+  echo "ERROR: QEMU proof already active for $OUTDIR" >&2
+  exit 1
+fi
 mkdir -p "$OUTDIR"
 rm -f -- "$OUTDIR/proof.txt" "$OUTDIR/agent-identities.txt"
 chmod 0700 "$OUTDIR"
@@ -76,6 +84,12 @@ trap 'exit 143' TERM
 trap 'exit 129' HUP
 
 rm -f -- "$LOG" "$RAW"
+IMAGE_SHA256_BEFORE="$(sha256sum -- "$IMAGE_ZST")"
+IMAGE_SHA256_BEFORE="${IMAGE_SHA256_BEFORE%% *}"
+[[ "$IMAGE_SHA256_BEFORE" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "ERROR: could not bind QEMU proof to a valid image digest" >&2
+  exit 1
+}
 zstd -d --sparse "$IMAGE_ZST" -o "$RAW"
 chmod 0600 "$RAW"
 
@@ -155,6 +169,13 @@ if [[ "$RC" -ne 0 ]]; then
   exit 1
 fi
 
+IMAGE_SHA256_AFTER="$(sha256sum -- "$IMAGE_ZST")"
+IMAGE_SHA256_AFTER="${IMAGE_SHA256_AFTER%% *}"
+if [[ "$IMAGE_SHA256_AFTER" != "$IMAGE_SHA256_BEFORE" ]]; then
+  echo "ERROR: compressed image changed during QEMU proof; refusing evidence" >&2
+  exit 1
+fi
+
 grep 'ARK_SOURCE_PROVENANCE_PROBE=PASS\|ARK_AGENT_SOCKET_PROBE=PASS\|ARK_AGENT_IDENTITY_PROBE=PASS\|ARK_AGENT_IDENTITY_SET_PROBE=PASS\|ARK_AGENT_CROSS_ROLE_ACCESS_PROBE=PASS\|ARK_STATUS_PROBE=PASS\|ARK_INGESTION_PREVERIFICATION_PROBE=PASS\|ARK_INGESTION_DEDUPLICATION_PROBE=PASS\|ARK_ALATHEIA_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_REJECTION_PROBE=PASS\|ARK_ALATHEIA_VERIFICATION_PROBE=PASS\|ARK_INGESTION_PROBE=PASS\|ARK_INGESTION_PERSISTENCE_PROBE=PASS\|ARK_GRAVEYARD_UNVERIFIED_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_ADMISSION_PROBE=PASS\|ARK_GRAVEYARD_TAMPER_REJECTION_PROBE=PASS\|ARK_REAL_EMBEDDING_PROBE=PASS\|ARK_EVIDENCE_CONTINUITY_PROBE=PASS\|ARK_NATIVE_BOOT_PROOF=PASS' "$LOG" > "$OUTDIR/proof.txt"
 /usr/bin/python - "$OUTDIR/proof.txt" "$OUTDIR/agent-identities.txt" <<'PY'
 import collections
@@ -209,6 +230,7 @@ with proof_path.open("a", encoding="utf-8") as proof:
     proof.write("ARK_NATIVE_BOOT_PROOF=PASS\n")
 print(qemu_identity_marker)
 PY
+printf 'ARK_QEMU_IMAGE_SHA256=%s\n' "$IMAGE_SHA256_AFTER" >> "$OUTDIR/proof.txt"
 printf 'qemu_exit=%s\n' "$RC" >> "$OUTDIR/proof.txt"
 printf 'QEMU native boot proof passed.\n'
 rm -f -- "$RAW"
