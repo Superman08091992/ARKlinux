@@ -172,6 +172,15 @@ class DisplayContractTests(unittest.TestCase):
         self.assertIn('pacman-key --init', build)
         self.assertIn('pacman-key --populate archlinux', build)
         self.assertIn('pacman-key --updatedb', build)
+        self.assertIn(
+            "GNUPGHOME=/etc/pacman.d/gnupg gpgconf --kill gpg-agent", build
+        )
+        self.assertIn(
+            "refusing to finalize while the guest filesystem remains mounted", build
+        )
+        self.assertIn(
+            "refusing to finalize while a loop device remains attached", build
+        )
 
 
 class DisplayPreflightTests(unittest.TestCase):
