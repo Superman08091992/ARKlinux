@@ -32,6 +32,21 @@ wait_active(){
   fail "inactive:$unit"
 }
 
+agent_socket_accepts(){
+  local socket_path="$1"
+  /usr/bin/python - "$socket_path" <<'PY'
+import socket
+import sys
+
+client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+client.settimeout(1.0)
+try:
+    client.connect(sys.argv[1])
+finally:
+    client.close()
+PY
+}
+
 wait_agent_ready(){
   local role="$1"
   local unit="ark-agent@$1.service"
@@ -43,7 +58,8 @@ wait_agent_ready(){
     if systemctl is-active --quiet "$unit" &&
        [[ -s "$domain/private/signing-key.pem" ]] &&
        [[ -s "$public_key" ]] &&
-       [[ -S "$socket" ]]; then
+       [[ -S "$socket" ]] &&
+       agent_socket_accepts "$socket"; then
       return 0
     fi
     sleep 1
@@ -120,6 +136,7 @@ wait_active ark-batch-executor.socket
 [[ -S /run/ark/batch-executor.sock ]] || fail 'missing_batch_executor_socket'
 [[ "$(stat -c '%U:%G:%a' /var/lib/ark/batch-executor/claims)" == 'root:root:700' ]] || fail 'invalid_batch_claim_store'
 
+declare -A AGENT_KEY_ID_OWNERS=()
 for role in kyle aletheia joey hrm kenny; do
   wait_agent_ready "$role"
   domain="/ark/agents/$role"
@@ -130,7 +147,8 @@ for role in kyle aletheia joey hrm kenny; do
   [[ -s "/ark/agent-public-keys/$role/signing-key.json" ]] || fail "missing_agent_public_key:$role"
   [[ "$(stat -c '%U:%a' "/ark/agent-public-keys/$role/signing-key.json")" == "ark-$role:644" ]] ||
     fail "invalid_agent_public_key:$role"
-  if ! /usr/bin/runuser -u "ark-$role" -- /usr/bin/python - "$role" <<'PY'
+  if ! identity_marker="$(
+    /usr/bin/runuser -u "ark-$role" -- /usr/bin/python - "$role" <<'PY'
 import base64
 import hashlib
 import json
@@ -165,10 +183,18 @@ signature = private_key.sign(challenge)
 public_key.verify(signature, challenge)
 print(f"ARK_AGENT_IDENTITY_PROBE=PASS role={role} key_id={expected['key_id']}")
 PY
-  then
+  )"; then
     fail "invalid_agent_identity:$role"
   fi
+  [[ "$identity_marker" =~ ^ARK_AGENT_IDENTITY_PROBE=PASS\ role=$role\ key_id=(ed25519:[0-9a-f]{32})$ ]] ||
+    fail "invalid_agent_identity_marker:$role"
+  key_id="${BASH_REMATCH[1]}"
+  prior_role="${AGENT_KEY_ID_OWNERS[$key_id]:-}"
+  [[ -z "$prior_role" ]] || fail "duplicate_agent_key_id:$role:$prior_role:$key_id"
+  AGENT_KEY_ID_OWNERS["$key_id"]="$role"
+  printf '%s\n' "$identity_marker"
 done
+printf 'ARK_AGENT_IDENTITY_UNIQUENESS_PROBE=PASS roles=5\n'
 
 python - <<'PY' || fail 'status_probe_failed'
 import json
