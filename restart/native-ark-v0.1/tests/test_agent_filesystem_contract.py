@@ -30,9 +30,11 @@ class AgentFilesystemContractTests(unittest.TestCase):
         self.assertIn("ark-batch-executor.socket", proof)
         self.assertIn("invalid_batch_claim_store", proof)
         self.assertIn("wait_agent_ready", proof)
-        self.assertIn("agent_socket_accepts", proof)
+        self.assertIn("agent_socket_responds", proof)
+        self.assertIn("ARK_AGENT_SOCKET_PROBE=PASS", proof)
+        self.assertIn("__ark_boot_readiness_probe__", proof)
         self.assertIn("ARK_AGENT_IDENTITY_PROBE=PASS", proof)
-        self.assertIn("ARK_AGENT_IDENTITY_UNIQUENESS_PROBE=PASS roles=5", proof)
+        self.assertIn("ARK_AGENT_IDENTITY_SET_PROBE=PASS roles=5 unique_key_ids=5", proof)
         self.assertIn("duplicate_agent_key_id", proof)
         self.assertIn("invalid_agent_private_directory", proof)
         self.assertIn("ARK_AGENT_CROSS_ROLE_ACCESS_PROBE=PASS", proof)
@@ -47,11 +49,19 @@ class AgentFilesystemContractTests(unittest.TestCase):
         self.assertIn("trap cleanup_qemu_raw EXIT", qemu_proof)
         self.assertIn("mutable QEMU raw reuse is incompatible", qemu_proof)
         self.assertIn("ARK_QEMU_RETAIN_FAILED_RAW", qemu_proof)
+        self.assertIn('kill -0 -- "-$group_pid"', qemu_proof)
         self.assertIn('kill -TERM -- "-$group_pid"', qemu_proof)
         self.assertIn('kill -KILL -- "-$group_pid"', qemu_proof)
         self.assertIn('wait "$QEMU_RUNNER_PID"', qemu_proof)
-        self.assertIn("ARK_AGENT_IDENTITY_SET_PROBE=PASS roles=5", qemu_proof)
-        self.assertIn("ARK_AGENT_IDENTITY_UNIQUENESS_PROBE=PASS roles=5", qemu_proof)
+        self.assertIn("retained active QEMU disk for safe recovery", qemu_proof)
+        self.assertIn("ARK_AGENT_SOCKET_PROBE=PASS", qemu_proof)
+        self.assertIn("identity marker set is not exact", qemu_proof)
+        self.assertIn("identity marker set contains duplicate key IDs", qemu_proof)
+        self.assertIn("guest identity-set marker is missing or duplicated", qemu_proof)
+        self.assertNotIn(
+            "printf 'ARK_AGENT_IDENTITY_SET_PROBE=PASS",
+            qemu_proof,
+        )
         self.assertIn("ARK_AGENT_CROSS_ROLE_ACCESS_PROBE=PASS", qemu_proof)
 
     def test_image_is_pinned_to_agentic_runtime_commit(self) -> None:
@@ -68,7 +78,7 @@ class AgentFilesystemContractTests(unittest.TestCase):
             build,
         )
         self.assertIn("no_baked_agent_private_material", build)
-        self.assertIn('find "$private" -mindepth 1 -print -quit', build)
+        self.assertIn('! test -e "$private" && ! test -L "$private"', build)
         self.assertIn("--kill-child=SIGTERM", build)
         self.assertNotIn("--kill-child=SIGKILL", build)
 
