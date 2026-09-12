@@ -14,7 +14,7 @@ class AgentFilesystemContractTests(unittest.TestCase):
 
     def test_build_creates_setgid_audit_ledgers(self) -> None:
         build = (ROOT / "build" / "build-image.sh").read_text(encoding="utf-8")
-        self.assertIn('"/ark/agents/$role/ledger"'.replace("\/", "/"), build)
+        self.assertIn('"/ark/agents/$role/ledger"', build)
         self.assertIn("getent group ark-agent-audit", build)
         packages = (ROOT / "config" / "packages.x86_64").read_text(encoding="utf-8")
         self.assertIn("python-cryptography", packages)
@@ -26,7 +26,7 @@ class AgentFilesystemContractTests(unittest.TestCase):
         self.assertIn("missing_agent_private_key", proof)
         self.assertIn("invalid_agent_ledger", proof)
         self.assertIn("ark-agent-audit:2750", proof)
-        self.assertIn('"/ark/agent-public-keys/$role/signing-key.json"'.replace("\/", "/"), proof)
+        self.assertIn('"/ark/agent-public-keys/$role/signing-key.json"', proof)
         self.assertIn("ark-batch-executor.socket", proof)
         self.assertIn("invalid_batch_claim_store", proof)
 
