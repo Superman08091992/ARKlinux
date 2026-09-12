@@ -182,9 +182,11 @@ class DisplayContractTests(unittest.TestCase):
         self.assertIn("associated_loops=", build)
         self.assertIn("another ARKlinux image build owns", build)
         self.assertIn(
-            "unshare --mount --pid --fork --mount-proc --kill-child=SIGKILL",
+            "unshare --mount --pid --fork --mount-proc --kill-child=SIGTERM",
             build,
         )
+        self.assertNotIn("--kill-child=SIGKILL", build)
+        self.assertIn("trap 'exit 143' TERM", build)
         self.assertIn("mount --make-rprivate /", build)
         self.assertIn(
             "mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run", build
