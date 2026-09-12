@@ -301,11 +301,19 @@ EOF
 
 stage "regenerate portable initramfs"
 arch-chroot "$MNT" mkinitcpio -P
-# A release image must not inherit the build host's autodetect whitelist. The
-# fallback image skips autodetect, so use that complete module set for the first
-# native boot. Normal kernel upgrades on the installed workstation regenerate
-# the default image against the real hardware.
-test -s "$MNT/boot${INITRAMFS_FALLBACK}"
+# A release image must not inherit the build host's autodetect whitelist.
+# Current Arch kernel packages may ship a default-only preset, so generate the
+# portable image explicitly instead of assuming a vendor fallback preset exists.
+arch-chroot "$MNT" mkinitcpio \
+  -k "/boot$KERNEL_IMAGE" \
+  -g "/boot$INITRAMFS_FALLBACK" \
+  -S autodetect
+[[ -s "$MNT/boot${INITRAMFS_FALLBACK}" ]] || {
+  echo "ERROR: portable initramfs generation failed: /boot$INITRAMFS_FALLBACK" >&2
+  exit 1
+}
+# Use the complete module set for first boot. Normal kernel upgrades on the
+# installed workstation regenerate the default image against the real hardware.
 cp "$MNT/boot${INITRAMFS_FALLBACK}" "$MNT/boot${INITRAMFS_IMAGE}"
 arch-chroot "$MNT" /bin/bash -lc \
   "lsinitcpio '/boot$INITRAMFS_IMAGE' | grep -Eq '/nouveau\\.ko(\\.(gz|xz|zst))?$'"
