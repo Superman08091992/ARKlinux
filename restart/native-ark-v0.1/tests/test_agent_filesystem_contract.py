@@ -61,6 +61,9 @@ class AgentFilesystemContractTests(unittest.TestCase):
         self.assertIn("identity marker set is not exact", qemu_proof)
         self.assertIn("identity marker set contains duplicate key IDs", qemu_proof)
         self.assertIn("guest identity-set marker is missing or duplicated", qemu_proof)
+        self.assertIn("QEMU boot produced ARK_NATIVE_BOOT_PROOF=FAIL", qemu_proof)
+        self.assertIn('proof.write("ARK_NATIVE_BOOT_PROOF=PASS\\n")', qemu_proof)
+        self.assertIn("ARK_QEMU_IDENTITY_EVIDENCE=PASS", qemu_proof)
         self.assertNotIn(
             "printf 'ARK_AGENT_IDENTITY_SET_PROBE=PASS",
             qemu_proof,
