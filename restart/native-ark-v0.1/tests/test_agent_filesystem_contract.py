@@ -14,6 +14,7 @@ def test_agent_subvolumes_are_role_owned_and_separate():
 def test_build_creates_setgid_audit_ledgers():
     build = (ROOT / "build" / "build-image.sh").read_text(encoding="utf-8")
     assert '"/ark/agents/$role/ledger"' in build
+    assert "getent group ark-agent-audit" in build
     assert "python-cryptography" in (ROOT / "config" / "packages.x86_64").read_text(encoding="utf-8")
 
 
