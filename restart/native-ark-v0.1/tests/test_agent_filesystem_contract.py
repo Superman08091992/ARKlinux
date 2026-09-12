@@ -68,6 +68,20 @@ class AgentFilesystemContractTests(unittest.TestCase):
             qemu_proof.index(stale_invalidation),
             qemu_proof.index('REUSE_RAW="${ARK_QEMU_REUSE_RAW:-0}"'),
         )
+        self.assertIn('QEMU_LOCK="$OUTDIR.lock"', qemu_proof)
+        self.assertIn('flock -n "$QEMU_LOCK_FD"', qemu_proof)
+        self.assertLess(
+            qemu_proof.index('flock -n "$QEMU_LOCK_FD"'),
+            qemu_proof.index(stale_invalidation),
+        )
+        self.assertIn("IMAGE_SHA256_BEFORE", qemu_proof)
+        self.assertIn("IMAGE_SHA256_AFTER", qemu_proof)
+        self.assertIn('"$IMAGE_SHA256_AFTER" != "$IMAGE_SHA256_BEFORE"', qemu_proof)
+        self.assertIn("ARK_QEMU_IMAGE_SHA256", qemu_proof)
+        self.assertLess(
+            qemu_proof.index("compressed image changed during QEMU proof"),
+            qemu_proof.index('> "$OUTDIR/proof.txt"'),
+        )
         self.assertIn("refusing to derive proof", qemu_proof)
         self.assertLess(
             qemu_proof.index("refusing to derive proof"),
