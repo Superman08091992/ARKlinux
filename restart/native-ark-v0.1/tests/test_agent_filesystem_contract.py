@@ -67,7 +67,7 @@ class AgentFilesystemContractTests(unittest.TestCase):
     def test_image_is_pinned_to_agentic_runtime_commit(self) -> None:
         lock = (ROOT / "config" / "ark-genesis.lock").read_text(encoding="utf-8")
         self.assertIn(
-            "ARK_GENESIS_COMMIT=8d6d0c854afed22678fbf33d60f33f55136599c5",
+            "ARK_GENESIS_COMMIT=d3fbe917f142ef8d6c3c2e8fc4ceebfbfce277f3",
             lock,
         )
         build = (ROOT / "build" / "build-image.sh").read_text(encoding="utf-8")
