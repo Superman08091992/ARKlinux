@@ -32,6 +32,26 @@ wait_active(){
   fail "inactive:$unit"
 }
 
+wait_agent_ready(){
+  local role="$1"
+  local unit="ark-agent@$1.service"
+  local domain="/ark/agents/$1"
+  local public_key="/ark/agent-public-keys/$1/signing-key.json"
+  local socket="/run/ark/agents/$1/$1.sock"
+  local attempt
+  for attempt in {1..30}; do
+    if systemctl is-active --quiet "$unit" &&
+       [[ -s "$domain/private/signing-key.pem" ]] &&
+       [[ -s "$public_key" ]] &&
+       [[ -S "$socket" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  diagnose_unit "$unit"
+  fail "agent_identity_not_ready:$role"
+}
+
 ROOT_CONTRACT="$(stat -c '%U:%G:%a' /)"
 [[ "$ROOT_CONTRACT" == "root:root:755" || "$ROOT_CONTRACT" == "root:root:555" ]] || {
   diagnose_unit systemd-tmpfiles-setup.service
@@ -101,12 +121,51 @@ wait_active ark-batch-executor.socket
 [[ "$(stat -c '%U:%G:%a' /var/lib/ark/batch-executor/claims)" == 'root:root:700' ]] || fail 'invalid_batch_claim_store'
 
 for role in kyle aletheia joey hrm kenny; do
+  wait_agent_ready "$role"
   domain="/ark/agents/$role"
   [[ "$(stat -c '%U:%G:%a' "$domain")" == "ark-$role:ark-agent-audit:750" ]] || fail "invalid_agent_domain:$role"
   [[ "$(stat -c '%U:%G:%a' "$domain/ledger")" == "ark-$role:ark-agent-audit:2750" ]] || fail "invalid_agent_ledger:$role"
   [[ -s "$domain/private/signing-key.pem" ]] || fail "missing_agent_private_key:$role"
   [[ "$(stat -c '%U:%a' "$domain/private/signing-key.pem")" == "ark-$role:600" ]] || fail "invalid_agent_private_key:$role"
   [[ -s "/ark/agent-public-keys/$role/signing-key.json" ]] || fail "missing_agent_public_key:$role"
+  [[ "$(stat -c '%U:%a' "/ark/agent-public-keys/$role/signing-key.json")" == "ark-$role:644" ]] ||
+    fail "invalid_agent_public_key:$role"
+  /usr/bin/runuser -u "ark-$role" -- /usr/bin/python - "$role" <<'PY' ||
+    fail "invalid_agent_identity:$role"
+import base64
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+role = sys.argv[1]
+private_path = Path(f"/ark/agents/{role}/private/signing-key.pem")
+public_path = Path(f"/ark/agent-public-keys/{role}/signing-key.json")
+private_key = serialization.load_pem_private_key(private_path.read_bytes(), password=None)
+if not isinstance(private_key, Ed25519PrivateKey):
+    raise SystemExit("private key is not Ed25519")
+public_key = private_key.public_key()
+raw_public = public_key.public_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PublicFormat.Raw,
+)
+expected = {
+    "role": role,
+    "algorithm": "ed25519",
+    "key_id": "ed25519:" + hashlib.sha256(raw_public).hexdigest()[:32],
+    "public_key": base64.b64encode(raw_public).decode("ascii"),
+}
+observed = json.loads(public_path.read_text(encoding="utf-8"))
+if observed != expected:
+    raise SystemExit("public record does not match private identity")
+challenge = f"ARK-NATIVE-BOOT-IDENTITY-PROBE:{role}".encode("utf-8")
+signature = private_key.sign(challenge)
+public_key.verify(signature, challenge)
+print(f"ARK_AGENT_IDENTITY_PROBE=PASS role={role} key_id={expected['key_id']}")
+PY
 done
 
 python - <<'PY' || fail 'status_probe_failed'
