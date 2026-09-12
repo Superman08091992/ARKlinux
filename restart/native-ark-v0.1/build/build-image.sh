@@ -23,6 +23,7 @@ KERNEL_IMAGE=/vmlinuz-linux-lts
 INITRAMFS_IMAGE=/initramfs-linux-lts.img
 INITRAMFS_FALLBACK=/initramfs-linux-lts-fallback.img
 MNT="$WORK/mnt"
+LOCK_FILE="${WORK}.lock"
 LOOP=""
 ESP_DEV=""
 ROOT_DEV=""
@@ -30,15 +31,30 @@ KPARTX_ACTIVE=0
 
 stage(){ printf '\n==> %s\n' "$*"; }
 
+teardown_build_state(){
+  local tracked_loop="${LOOP:-}" associated_loops="" failed=0
+  mountpoint -q "$MNT/boot" && umount "$MNT/boot" || true
+  while mountpoint -q "$MNT"; do umount -R "$MNT" 2>/dev/null || break; done
+  if [[ "$KPARTX_ACTIVE" == "1" && -n "$tracked_loop" ]]; then
+    kpartx -d "$tracked_loop" 2>/dev/null || true
+  fi
+  if [[ -n "$tracked_loop" ]] && losetup "$tracked_loop" >/dev/null 2>&1; then
+    losetup -d "$tracked_loop" 2>/dev/null || true
+  fi
+  findmnt -rnR -M "$MNT" >/dev/null 2>&1 && failed=1
+  associated_loops="$(losetup --list --noheadings --raw --output NAME --associated "$IMG" 2>/dev/null || true)"
+  [[ -n "$associated_loops" ]] && failed=1
+  if [[ -n "$tracked_loop" ]] && losetup "$tracked_loop" >/dev/null 2>&1; then
+    failed=1
+  fi
+  return "$failed"
+}
+
 cleanup(){
-  (
-    # Keep best-effort trap cleanup from changing errexit in the caller.
-    set +e
-    mountpoint -q "$MNT/boot" && umount "$MNT/boot"
-    while mountpoint -q "$MNT"; do umount -R "$MNT" 2>/dev/null || break; done
-    if [[ "$KPARTX_ACTIVE" == "1" && -n "$LOOP" ]]; then kpartx -d "$LOOP" 2>/dev/null || true; fi
-    [[ -n "$LOOP" ]] && losetup -d "$LOOP" 2>/dev/null || true
-  )
+  local rc=$?
+  trap - EXIT
+  teardown_build_state >/dev/null 2>&1 || true
+  exit "$rc"
 }
 trap cleanup EXIT
 
@@ -131,6 +147,8 @@ apply_persistent_ark_layout(){
 }
 
 [[ ${EUID:-$(id -u)} -eq 0 ]] || { echo "ERROR: build-image.sh must run as root" >&2; exit 1; }
+exec 9>"$LOCK_FILE"
+flock -n 9 || { echo "ERROR: another ARKlinux image build owns: $LOCK_FILE" >&2; exit 1; }
 [[ -f "$OVERLAY" ]] || { echo "ERROR: private A.R.K. overlay missing: $OVERLAY" >&2; exit 1; }
 [[ -f "$SHELL_OVERLAY" ]] || { echo "ERROR: critical ARKlinux Shell overlay missing: $SHELL_OVERLAY" >&2; exit 1; }
 stage "prepare raw disk"
@@ -223,7 +241,7 @@ arch-chroot "$MNT" pacman-key --populate archlinux
 arch-chroot "$MNT" pacman-key --updatedb
 # pacman-key may leave its image-local gpg-agent alive. Stop that exact agent
 # before final unmount so it cannot retain the guest Btrfs filesystem.
-arch-chroot "$MNT" env GNUPGHOME=/etc/pacman.d/gnupg gpgconf --kill gpg-agent
+arch-chroot "$MNT" gpgconf --homedir /etc/pacman.d/gnupg --kill all || true
 
 stage "generate locale"
 arch-chroot "$MNT" locale-gen
@@ -354,17 +372,14 @@ cp "$ARKLINUX_SHELL_LOCK" "$OUT/evidence/arklinux-shell.lock"
 
 stage "finalize and compress image"
 sync
-cleanup
-if findmnt -rnR -M "$MNT" >/dev/null 2>&1; then
-  echo "ERROR: refusing to finalize while the guest filesystem remains mounted: $MNT" >&2
+if ! teardown_build_state; then
+  echo "ERROR: refusing to finalize while the guest filesystem remains mounted or its loop remains attached" >&2
   findmnt -R -M "$MNT" >&2 || true
-  exit 1
-fi
-if losetup --list --noheadings --raw --output NAME --associated "$IMG" 2>/dev/null | grep -q .; then
-  echo "ERROR: refusing to finalize while a loop device remains attached to: $IMG" >&2
   losetup --list --output NAME,BACK-FILE --associated "$IMG" >&2 || true
+  [[ -n "$LOOP" ]] && losetup "$LOOP" >&2 || true
   exit 1
 fi
+trap - EXIT
 LOOP=""
 KPARTX_ACTIVE=0
 (cd "$OUT" && sha256sum "$(basename "$IMG")" > RAW-SHA256SUMS)
