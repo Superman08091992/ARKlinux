@@ -132,6 +132,11 @@ if [[ "$TERMINATION_FAILED" == "0" && "$STOPPED_ON_MARKER" == "1" ]] &&
 fi
 set -e
 
+if grep -q 'ARK_NATIVE_BOOT_PROOF=FAIL' "$LOG"; then
+  echo "ERROR: QEMU boot produced ARK_NATIVE_BOOT_PROOF=FAIL (qemu rc=$RC)" >&2
+  tail -200 "$LOG" >&2
+  exit 1
+fi
 if ! grep -q 'ARK_NATIVE_BOOT_PROOF=PASS' "$LOG"; then
   echo "ERROR: QEMU boot did not produce ARK_NATIVE_BOOT_PROOF=PASS (qemu rc=$RC)" >&2
   tail -200 "$LOG" >&2
@@ -182,7 +187,15 @@ identity_path.write_text(
     ),
     encoding="utf-8",
 )
-print("ARK_QEMU_IDENTITY_EVIDENCE=PASS roles=5 unique_key_ids=5 sockets=5")
+qemu_identity_marker = (
+    "ARK_QEMU_IDENTITY_EVIDENCE=PASS roles=5 unique_key_ids=5 sockets=5"
+)
+with proof_path.open("a", encoding="utf-8") as proof:
+    # Preserve the prefixed serial evidence above, then add the canonical
+    # verified markers consumed by DREAMER's release gate.
+    proof.write(qemu_identity_marker + "\n")
+    proof.write("ARK_NATIVE_BOOT_PROOF=PASS\n")
+print(qemu_identity_marker)
 PY
 printf 'qemu_exit=%s\n' "$RC" >> "$OUTDIR/proof.txt"
 printf 'QEMU native boot proof passed.\n'
