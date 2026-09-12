@@ -40,8 +40,23 @@ class DisplayContractTests(unittest.TestCase):
         build = (NATIVE_ROOT / "build/build-image.sh").read_text()
         self.assertIn("KERNEL_IMAGE=/vmlinuz-linux-lts", build)
         self.assertIn("INITRAMFS_IMAGE=/initramfs-linux-lts.img", build)
+        self.assertNotIn('arch-chroot "$MNT" mkinitcpio -P', build)
+        self.assertIn('-k "/boot$KERNEL_IMAGE"', build)
+        self.assertIn('-g "/boot$INITRAMFS_FALLBACK"', build)
+        self.assertIn("-S autodetect", build)
+        self.assertIn("portable initramfs generation failed", build)
         self.assertIn('cp "$MNT/boot${INITRAMFS_FALLBACK}"', build)
         self.assertIn("/nouveau\\\\.ko", build)
+        preset = (
+            NATIVE_ROOT / "rootfs/etc/mkinitcpio.d/linux-lts.preset"
+        ).read_text()
+        self.assertIn('ALL_kver="/boot/vmlinuz-linux-lts"', preset)
+        self.assertIn("PRESETS=('default' 'fallback')", preset)
+        self.assertIn('default_image="/boot/initramfs-linux-lts.img"', preset)
+        self.assertIn(
+            'fallback_image="/boot/initramfs-linux-lts-fallback.img"', preset
+        )
+        self.assertIn('fallback_options="-S autodetect"', preset)
 
     def test_greetd_has_pre_pam_wayland_type_and_vt_exclusion(self) -> None:
         config = (NATIVE_ROOT / "rootfs/etc/greetd/config.toml").read_text()
