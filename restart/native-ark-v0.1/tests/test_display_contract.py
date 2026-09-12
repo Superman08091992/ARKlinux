@@ -40,6 +40,7 @@ class DisplayContractTests(unittest.TestCase):
         build = (NATIVE_ROOT / "build/build-image.sh").read_text()
         self.assertIn("KERNEL_IMAGE=/vmlinuz-linux-lts", build)
         self.assertIn("INITRAMFS_IMAGE=/initramfs-linux-lts.img", build)
+        self.assertNotIn('arch-chroot "$MNT" mkinitcpio -P', build)
         self.assertIn('-k "/boot$KERNEL_IMAGE"', build)
         self.assertIn('-g "/boot$INITRAMFS_FALLBACK"', build)
         self.assertIn("-S autodetect", build)
