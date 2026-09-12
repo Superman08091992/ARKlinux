@@ -74,7 +74,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
 
-rm -f "$LOG" "$RAW"
+rm -f -- "$LOG" "$RAW" "$OUTDIR/proof.txt" "$OUTDIR/agent-identities.txt"
 zstd -d --sparse "$IMAGE_ZST" -o "$RAW"
 chmod 0600 "$RAW"
 
