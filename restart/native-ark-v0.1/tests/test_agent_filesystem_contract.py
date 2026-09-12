@@ -29,6 +29,16 @@ class AgentFilesystemContractTests(unittest.TestCase):
         self.assertIn('"/ark/agent-public-keys/$role/signing-key.json"', proof)
         self.assertIn("ark-batch-executor.socket", proof)
         self.assertIn("invalid_batch_claim_store", proof)
+        self.assertIn("wait_agent_ready", proof)
+        self.assertIn("ARK_AGENT_IDENTITY_PROBE=PASS", proof)
+        self.assertIn("public record does not match private identity", proof)
+
+        qemu_proof = (
+            ROOT / "build" / "qemu-proof.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("trap cleanup_qemu_raw EXIT", qemu_proof)
+        self.assertIn("mutable QEMU raw reuse is incompatible", qemu_proof)
+        self.assertIn("ARK_QEMU_RETAIN_FAILED_RAW", qemu_proof)
 
     def test_image_is_pinned_to_agentic_runtime_commit(self) -> None:
         lock = (ROOT / "config" / "ark-genesis.lock").read_text(encoding="utf-8")
@@ -43,6 +53,7 @@ class AgentFilesystemContractTests(unittest.TestCase):
             'cp "$ARK_GENESIS_LOCK" "$OUT/evidence/ark-genesis.lock"',
             build,
         )
+        self.assertIn("no_baked_agent_private_keys", build)
 
 
 if __name__ == "__main__":
