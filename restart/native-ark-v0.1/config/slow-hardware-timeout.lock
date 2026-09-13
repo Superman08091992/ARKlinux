@@ -1,0 +1,3 @@
+# Slow-hardware release proof timing contract.
+ARK_AGENT_RESPONSE_TIMEOUT_SECONDS=300
+ARK_BOOT_PROOF_HTTP_TIMEOUT_SECONDS=300
