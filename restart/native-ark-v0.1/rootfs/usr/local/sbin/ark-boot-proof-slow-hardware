@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The canonical proof keeps ordinary fast-path timeouts intact, but on older
+# hardware the model-backed stages need more wall-clock budget than the default
+# 30-second HTTP caller permits. Transform only request_json defaults from
+# 30 seconds to 300 seconds for this boot-proof invocation.
+sed \
+  's/def request_json(path, payload=None, timeout=30,/def request_json(path, payload=None, timeout=300,/g' \
+  /usr/local/sbin/ark-boot-proof | /usr/bin/bash
