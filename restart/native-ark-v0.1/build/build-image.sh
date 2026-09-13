@@ -165,6 +165,111 @@ apply_subvolume_mount_contract(){
   done < "$RELROOT/config/subvolumes.tsv"
 }
 
+seed_release_models(){
+  local host_store="${ARKLINUX_HOST_OLLAMA_STORE:-/var/lib/ollama}"
+  local lock_file="$RELROOT/config/release-models.lock"
+  local guest_store="$MNT/ark/models/ollama"
+  local model expected_sha repo tag manifest_rel manifest_src manifest_dst observed_sha
+  local digest blob_name blob_src blob_dst blob_sha
+
+  [[ -s "$lock_file" ]] || {
+    echo "ERROR: missing release model lock: $lock_file" >&2
+    return 1
+  }
+
+  [[ -d "$host_store/manifests/registry.ollama.ai/library" ]] || {
+    echo "ERROR: host Ollama manifest store missing: $host_store" >&2
+    return 1
+  }
+
+  [[ -d "$host_store/blobs" ]] || {
+    echo "ERROR: host Ollama blob store missing: $host_store/blobs" >&2
+    return 1
+  }
+
+  install -d -m 0750 "$guest_store"
+  install -d -m 0750 "$guest_store/blobs"
+
+  while IFS=$'\t' read -r model expected_sha; do
+    [[ -z "${model:-}" || "$model" == \#* ]] && continue
+
+    [[ "$model" == *:* ]] || {
+      echo "ERROR: invalid release model name: $model" >&2
+      return 1
+    }
+
+    [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]] || {
+      echo "ERROR: invalid manifest SHA256 for $model" >&2
+      return 1
+    }
+
+    repo="${model%%:*}"
+    tag="${model#*:}"
+
+    manifest_rel="manifests/registry.ollama.ai/library/$repo/$tag"
+    manifest_src="$host_store/$manifest_rel"
+    manifest_dst="$guest_store/$manifest_rel"
+
+    [[ -s "$manifest_src" ]] || {
+      echo "ERROR: locked model manifest missing: $model" >&2
+      return 1
+    }
+
+    observed_sha="$(sha256sum "$manifest_src" | awk '{print $1}')"
+    [[ "$observed_sha" == "$expected_sha" ]] || {
+      echo "ERROR: model manifest changed: $model expected=$expected_sha observed=$observed_sha" >&2
+      return 1
+    }
+
+    install -D -m 0644 \
+      "$manifest_src" "$manifest_dst"
+
+    while IFS= read -r digest; do
+      [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+        echo "ERROR: invalid blob digest in model $model: $digest" >&2
+        return 1
+      }
+
+      blob_name="${digest/:/-}"
+      blob_src="$host_store/blobs/$blob_name"
+      blob_dst="$guest_store/blobs/$blob_name"
+
+      [[ -s "$blob_src" ]] || {
+        echo "ERROR: referenced Ollama blob missing: $digest model=$model" >&2
+        return 1
+      }
+
+      blob_sha="$(sha256sum "$blob_src" | awk '{print $1}')"
+      [[ "$blob_sha" == "${digest#sha256:}" ]] || {
+        echo "ERROR: Ollama blob digest mismatch: $digest model=$model" >&2
+        return 1
+      }
+
+      if [[ ! -e "$blob_dst" ]]; then
+        install -m 0644 \
+          "$blob_src" "$blob_dst"
+      fi
+    done < <(
+      python - "$manifest_src" <<'PYS'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    manifest = json.load(fh)
+
+print(manifest["config"]["digest"])
+for layer in manifest.get("layers", []):
+    print(layer["digest"])
+PYS
+    )
+
+    printf 'ARK_RELEASE_MODEL_SEEDED=PASS model=%s manifest_sha256=%s\n' \
+      "$model" "$expected_sha"
+  done < "$lock_file"
+
+  arch-chroot "$MNT" chown -R ollama:ollama /ark/models/ollama
+}
+
 apply_persistent_ark_layout(){
   # Persistent state belongs to the Btrfs/image layer, not tmpfiles. This is
   # deliberately separate from /run/ark, which is volatile and recreated by
@@ -302,6 +407,9 @@ apply_subvolume_mount_contract
 stage "apply persistent A.R.K. Btrfs layout"
 apply_persistent_ark_layout
 
+stage "seed locked release models"
+seed_release_models
+
 stage "validate volatile tmpfiles contract transactionally"
 # Use tmpfiles' alternate-root mode so this check cannot bind or alter the
 # build host's live /run. Remove the test tree so boot must recreate it on tmpfs.
@@ -400,6 +508,12 @@ validate_guest_contract root_ownership 'test "$(stat -c "%U:%G:%a" /)" = root:ro
 validate_guest_contract runtime_payload 'test -d /ark/runtime && test -f /ark/pair_mvp/pipeline.py && test -f /ark/pair_mvp/alatheia.py && test -x /usr/bin/ark-agentic-model-proof && test -f /etc/ark/ARK_GENESIS_COMMIT && test -f /etc/ark/ALATHEIA_COMMIT && ! test -e /opt/ark && ! test -L /opt/ark'
 validate_guest_contract model_store_contract 'test -x /usr/local/sbin/ark-model-pull && test -r /usr/share/ark/model-catalog.json && test -f /etc/systemd/system/ollama.service.d/10-ark-model-store.conf && grep -q "OLLAMA_MODELS=/ark/models/ollama" /etc/systemd/system/ollama.service.d/10-ark-model-store.conf'
 validate_guest_contract model_store_ownership 'test "$(stat -c "%U:%G:%a" /ark/models/ollama)" = ollama:ollama:750 && id -nG ollama | tr " " "\n" | grep -qx ark-state'
+validate_guest_contract release_models_installed '
+  test -s /ark/models/ollama/manifests/registry.ollama.ai/library/qwen3.5/2b-q4_K_M &&
+  test -s /ark/models/ollama/manifests/registry.ollama.ai/library/deepseek-r1/1.5b &&
+  test -s /ark/models/ollama/manifests/registry.ollama.ai/library/llava/latest &&
+  test -s /ark/models/ollama/manifests/registry.ollama.ai/library/tinyllama/latest
+'
 validate_guest_contract shared_runtime_paths 'for path in /ark/logs /ark/bus /var/log/ark; do test -d "$path" && test "$(stat -c "%U:%G:%a" "$path")" = arkd:ark-state:770 || exit 1; done'
 validate_guest_contract agent_subvolume_mounts 'for role in kyle aletheia joey hrm kenny; do mountpoint -q "/ark/agents/$role" && test "$(stat -c "%U:%G:%a" "/ark/agents/$role")" = "ark-$role:ark-agent-audit:750" || exit 1; done'
 validate_guest_contract no_baked_agent_private_material 'for role in kyle aletheia joey hrm kenny; do private="/ark/agents/$role/private"; ! test -e "$private" && ! test -L "$private" || exit 1; done'

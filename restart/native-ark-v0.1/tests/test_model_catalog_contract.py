@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "rootfs/usr/share/ark/model-catalog.json"
 PULL_SCRIPT = ROOT / "rootfs/usr/local/sbin/ark-model-pull"
 STORE_DROPIN = ROOT / "rootfs/etc/systemd/system/ollama.service.d/10-ark-model-store.conf"
+RELEASE_MODELS_LOCK = ROOT / "config/release-models.lock"
+BUILD_SCRIPT = ROOT / "build/build-image.sh"
 
 
 class ModelCatalogContractTests(unittest.TestCase):
@@ -51,6 +53,51 @@ class ModelCatalogContractTests(unittest.TestCase):
         build = (ROOT / "build/build-image.sh").read_text(encoding="utf-8")
         self.assertIn("usermod -a -G ark-state ollama", build)
         self.assertIn("-o ollama -g ollama /ark/models/ollama", build)
+
+    def test_locked_release_models_are_seeded_into_image(self):
+        expected_models = {
+            "qwen3.5:2b-q4_K_M",
+            "deepseek-r1:1.5b",
+            "llava:latest",
+            "tinyllama:latest",
+        }
+
+        records = {}
+        for raw in RELEASE_MODELS_LOCK.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            model, digest = line.split("\t", 1)
+            self.assertRegex(digest, r"^[0-9a-f]{64}$")
+            self.assertNotIn(model, records)
+            records[model] = digest
+
+        self.assertEqual(set(records), expected_models)
+
+        # Kyle's primary model must be physically present in the release set.
+        self.assertIn(
+            self.catalog["routes"]["kyle"]["primary"],
+            records,
+        )
+
+        build = BUILD_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("seed_release_models(){", build)
+        self.assertIn('done < "$lock_file"', build)
+        self.assertIn("ARK_RELEASE_MODEL_SEEDED=PASS", build)
+        self.assertIn("release_models_installed", build)
+
+        # Every referenced blob is content-address verified before inclusion.
+        self.assertIn(
+            '[[ "$blob_sha" == "${digest#sha256:}" ]]',
+            build,
+        )
+
+        # Guest ownership must use guest account resolution, not host numeric IDs.
+        self.assertIn(
+            'arch-chroot "$MNT" chown -R ollama:ollama /ark/models/ollama',
+            build,
+        )
+
 
     def test_pull_is_explicit_and_not_a_boot_download(self):
         script = PULL_SCRIPT.read_text(encoding="utf-8")
