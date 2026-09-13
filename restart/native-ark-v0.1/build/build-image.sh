@@ -304,13 +304,23 @@ flock -n 9 || { echo "ERROR: another ARKlinux image build owns: $LOCK_FILE" >&2;
 [[ -f "$SHELL_OVERLAY" ]] || { echo "ERROR: critical ARKlinux Shell overlay missing: $SHELL_OVERLAY" >&2; exit 1; }
 stage "prepare raw disk"
 clear_stale_build_state
-rm -rf "$WORK"; mkdir -p "$OUT" "$MNT"; rm -f "$IMG" "$COMPRESSED"
+rm -rf "$WORK"
+mkdir -p "$OUT" "$MNT" "$(dirname "$IMG")"
+rm -f "$IMG" "$COMPRESSED"
 truncate -s "${SIZE_GIB}G" "$IMG"
-sgdisk --zap-all "$IMG"
-sgdisk -n 1:1MiB:+1GiB -t 1:ef00 -c 1:ARKESP "$IMG"
-sgdisk -n 2:0:0 -t 2:8300 -c 2:ARKROOT "$IMG"
-LOOP="$(losetup --find --show --partscan "$IMG")"
+
+# Attach the sparse image before writing GPT. Partitioning a regular backing
+# file caused gdisk to emit the misleading "kernel is still using the old
+# partition table" warning, and made loop setup failures harder to distinguish
+# from image-path failures. The loop is now the single partitioning authority.
+LOOP="$(losetup --find --show "$IMG")"
+[[ -b "$LOOP" ]] || { echo "ERROR: failed to attach raw image loop device: $IMG" >&2; exit 1; }
+sgdisk --zap-all "$LOOP"
+sgdisk -n 1:1MiB:+1GiB -t 1:ef00 -c 1:ARKESP "$LOOP"
+sgdisk -n 2:0:0 -t 2:8300 -c 2:ARKROOT "$LOOP"
+partprobe "$LOOP" 2>/dev/null || partx -u "$LOOP" 2>/dev/null || true
 resolve_partitions
+printf 'ARKLINUX_PARTITION_PREFLIGHT=PASS target=loop-device loop=%s\n' "$LOOP"
 printf 'Partition map: loop=%s esp=%s root=%s\n' "$LOOP" "$ESP_DEV" "$ROOT_DEV"
 
 stage "format and create native Btrfs topology"

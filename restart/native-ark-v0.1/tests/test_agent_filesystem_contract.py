@@ -107,12 +107,13 @@ class AgentFilesystemContractTests(unittest.TestCase):
         )
         self.assertIn("ARK_AGENT_CROSS_ROLE_ACCESS_PROBE=PASS", qemu_proof)
 
-    def test_image_is_pinned_to_agentic_runtime_commit(self) -> None:
+    def test_image_is_pinned_to_canonical_runtime_commit(self) -> None:
         lock = (ROOT / "config" / "ark-genesis.lock").read_text(encoding="utf-8")
         self.assertIn(
-            "ARK_GENESIS_COMMIT=d3fbe917f142ef8d6c3c2e8fc4ceebfbfce277f3",
+            "ARK_GENESIS_COMMIT=a5e8f823b0ad6db61206a2898e39eab795ecdac9",
             lock,
         )
+        self.assertIn("ARK_GENESIS_BRANCH=main", lock)
         build = (ROOT / "build" / "build-image.sh").read_text(encoding="utf-8")
         self.assertIn("runtime overlay commit", build)
         self.assertIn("test -x /usr/bin/ark-agentic-model-proof", build)
