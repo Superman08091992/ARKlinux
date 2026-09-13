@@ -117,11 +117,42 @@ VARS_SRC="$(find /usr/share/edk2 -type f \( -name 'OVMF_VARS.4m.fd' -o -name 'OV
 VARS="$OUTDIR/OVMF_VARS.fd"
 cp "$VARS_SRC" "$VARS"
 
+
+QEMU_ACCEL="${ARK_QEMU_ACCEL:-auto}"
+case "$QEMU_ACCEL" in
+  auto)
+    if [[ -c /dev/kvm && -r /dev/kvm && -w /dev/kvm ]]; then
+      QEMU_ACCEL=kvm
+    else
+      QEMU_ACCEL=tcg
+    fi
+    ;;
+  kvm)
+    [[ -c /dev/kvm && -r /dev/kvm && -w /dev/kvm ]] || {
+      echo "ERROR: ARK_QEMU_ACCEL=kvm requested but /dev/kvm is unavailable" >&2
+      exit 1
+    }
+    ;;
+  tcg) ;;
+  *)
+    echo "ERROR: unsupported ARK_QEMU_ACCEL=$QEMU_ACCEL" >&2
+    exit 1
+    ;;
+esac
+
+if [[ "$QEMU_ACCEL" == "kvm" ]]; then
+  QEMU_CPU="${ARK_QEMU_CPU:-host}"
+else
+  QEMU_CPU="${ARK_QEMU_CPU:-max}"
+fi
+
+printf 'ARK_QEMU_ACCELERATOR=%s cpu=%s\n' "$QEMU_ACCEL" "$QEMU_CPU"
+
 set +e
 QEMU_TIMEOUT_SECONDS="${ARK_QEMU_TIMEOUT_SECONDS:-3600}"
 setsid timeout --signal=TERM --kill-after=10s "$QEMU_TIMEOUT_SECONDS" qemu-system-x86_64 \
-  -machine q35,accel=tcg \
-  -cpu max -smp "${ARK_QEMU_CPUS:-4}" -m "${ARK_QEMU_MEMORY_MIB:-6144}" \
+  -machine "q35,accel=$QEMU_ACCEL" \
+  -cpu "$QEMU_CPU" -smp "${ARK_QEMU_CPUS:-4}" -m "${ARK_QEMU_MEMORY_MIB:-6144}" \
   -drive if=pflash,format=raw,readonly=on,file="$CODE" \
   -drive if=pflash,format=raw,file="$VARS" \
   -drive file="$RAW",format=raw,if=virtio,cache=unsafe \
@@ -250,6 +281,7 @@ with proof_path.open("a", encoding="utf-8") as proof:
     proof.write("ARK_NATIVE_BOOT_PROOF=PASS\n")
 print(qemu_identity_marker)
 PY
+printf 'ARK_QEMU_ACCELERATOR=%s cpu=%s\n' "$QEMU_ACCEL" "$QEMU_CPU" >> "$PROOF_TMP"
 printf 'ARK_QEMU_EXCLUSIVE_RUN_PROBE=PASS scope=outdir\n' >> "$PROOF_TMP"
 printf 'ARK_QEMU_IMAGE_SHA256=%s\n' "$IMAGE_SHA256_AFTER" >> "$PROOF_TMP"
 printf 'qemu_exit=%s\n' "$RC" >> "$PROOF_TMP"
