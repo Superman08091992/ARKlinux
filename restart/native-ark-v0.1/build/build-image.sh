@@ -478,13 +478,13 @@ cat > "$MNT/boot/loader/entries/arklinux.conf" <<EOF
 title ARKlinux Native v0.1
 linux $KERNEL_IMAGE
 initrd $INITRAMFS_IMAGE
-options root=UUID=$ROOTUUID rootflags=subvol=@ark rw quiet audit=1 console=tty0 console=ttyS0,115200n8
+options root=UUID=$ROOTUUID rootflags=subvol=@ark rw quiet audit=1 audit_backlog_limit=8192 console=tty0 console=ttyS0,115200n8
 EOF
 cat > "$MNT/boot/loader/entries/arklinux-fallback.conf" <<EOF
 title ARKlinux Native v0.1 (fallback)
 linux $KERNEL_IMAGE
 initrd $INITRAMFS_FALLBACK
-options root=UUID=$ROOTUUID rootflags=subvol=@ark rw audit=1 console=tty0 console=ttyS0,115200n8
+options root=UUID=$ROOTUUID rootflags=subvol=@ark rw audit=1 audit_backlog_limit=8192 console=tty0 console=ttyS0,115200n8
 EOF
 
 stage "regenerate portable initramfs"
@@ -506,7 +506,7 @@ arch-chroot "$MNT" /bin/bash -lc \
   "lsinitcpio '/boot$INITRAMFS_IMAGE' | grep -Eq '/nouveau\\.ko(\\.(gz|xz|zst))?$'"
 
 stage "enable native services"
-systemctl --root="$MNT" enable NetworkManager.service nftables.service chronyd.service greetd.service ollama.service ark-embedding-model.service ark-firstboot.service ark.target ark-desktop-core.target ark-ui-broker.service ark-shell-server.service ark-display-adapter.service ark-boot-proof.service ark-gpu-report.service ark-display-preflight.service
+systemctl --root="$MNT" enable NetworkManager.service auditd.service nftables.service chronyd.service greetd.service ollama.service ark-embedding-model.service ark-firstboot.service ark.target ark-desktop-core.target ark-ui-broker.service ark-shell-server.service ark-display-adapter.service ark-boot-proof.service ark-gpu-report.service ark-display-preflight.service
 systemctl --root="$MNT" --global enable ark-embodied-desktop.service
 # Keep ttyS0 as a write-only CI/emergency console without letting the generated
 # serial getty restart forever on workstations that have no usable serial port.
@@ -530,10 +530,11 @@ validate_guest_contract no_baked_agent_private_material 'for role in kyle alethe
 validate_guest_contract core_units 'test -f /usr/lib/systemd/system/arkd.service && test -f /etc/systemd/system/ark-embedding-model.service && test -f /usr/lib/systemd/system/ark-kj.service && test -f /usr/lib/systemd/system/ark-agent@.service && test -f /usr/lib/systemd/system/ark-batch-executor.socket && test -f /usr/lib/systemd/system/ark-batch-executor.service'
 validate_guest_contract embodied_desktop_payload 'test -s /usr/lib/arklinux-shell/dist/index.html && test -s /usr/lib/arklinux-shell/build/server.cjs && test -s /usr/lib/arklinux-shell/electron/main.cjs && test -x /usr/lib/ark-desktop/ui_broker.py && test -x /usr/local/bin/ark-embodied-desktop && test -x /usr/local/sbin/ark-desktop-ready && test -f /etc/ark/ARKLINUX_SHELL_COMMIT'
 validate_guest_contract desktop_units 'test -f /etc/systemd/system/ark-desktop-core.target && test -f /etc/systemd/system/ark-ui-broker.service && test -f /etc/systemd/system/ark-shell-server.service && test -f /etc/systemd/system/ark.target.d/20-critical-desktop.conf && test -f /etc/systemd/user/ark-embodied-desktop.service'
-validate_guest_contract systemd_units 'systemd-analyze verify /usr/lib/systemd/system/ollama.service /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-batch-executor.socket /usr/lib/systemd/system/ark-batch-executor.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-desktop-core.target /etc/systemd/system/ark-ui-broker.service /etc/systemd/system/ark-shell-server.service /etc/systemd/user/ark-embodied-desktop.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service /etc/systemd/system/ark-gpu-report.service /etc/systemd/system/ark-display-preflight.service'
+validate_guest_contract audit_integrity 'systemctl is-enabled --quiet auditd.service && grep -qx -- "-b 8192" /etc/audit/rules.d/10-arklinux-backlog.rules && grep -q "audit=1 audit_backlog_limit=8192" /boot/loader/entries/arklinux.conf && grep -q "audit=1 audit_backlog_limit=8192" /boot/loader/entries/arklinux-fallback.conf'
+validate_guest_contract systemd_units 'systemd-analyze verify /usr/lib/systemd/system/auditd.service /usr/lib/systemd/system/audit-rules.service /usr/lib/systemd/system/ollama.service /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-batch-executor.socket /usr/lib/systemd/system/ark-batch-executor.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-desktop-core.target /etc/systemd/system/ark-ui-broker.service /etc/systemd/system/ark-shell-server.service /etc/systemd/user/ark-embodied-desktop.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service /etc/systemd/system/ark-gpu-report.service /etc/systemd/system/ark-display-preflight.service'
 validate_guest_contract greetd_pam 'test -f /etc/pam.d/greetd && grep -q "pam_env.so conffile=/etc/greetd/greetd-pam-env.conf" /etc/pam.d/greetd && test -f /etc/systemd/system/greetd.service.d/10-arklinux-vt.conf'
 validate_guest_contract console_failover 'grep -q "^OnFailure=getty@tty1.service$" /etc/systemd/system/ark-display-preflight.service && test "$(readlink /etc/systemd/system/serial-getty@ttyS0.service)" = /dev/null'
-validate_guest_contract package_inventory 'pacman -Q linux-lts linux-lts-headers mesa libdrm plasma-pa xdg-desktop-portal-kde rtkit python-cryptography nodejs-lts-krypton electron >/dev/null'
+validate_guest_contract package_inventory 'pacman -Q audit linux-lts linux-lts-headers mesa libdrm plasma-pa xdg-desktop-portal-kde rtkit python-cryptography nodejs-lts-krypton electron >/dev/null'
 
 stage "collect image evidence"
 mkdir -p "$OUT/evidence"; cp "$RELROOT/config/subvolumes.tsv" "$OUT/evidence/subvolumes.tsv"; cp "$RELROOT/config/packages.x86_64" "$OUT/evidence/packages.requested"; cp "$RELROOT/config/dependencies.md" "$OUT/evidence/dependencies.md"; cp "$MNT/etc/fstab" "$OUT/evidence/fstab"; pacman --root "$MNT" --config /etc/pacman.conf -Q > "$OUT/evidence/packages.installed"; btrfs subvolume list "$MNT" > "$OUT/evidence/btrfs-subvolumes.txt"; findmnt -R "$MNT" > "$OUT/evidence/mount-tree.txt"; cp "$MNT/etc/ark/ARK_GENESIS_COMMIT" "$OUT/evidence/ARK_GENESIS_COMMIT"; cp "$MNT/etc/ark/ALATHEIA_COMMIT" "$OUT/evidence/ALATHEIA_COMMIT"; sha256sum "$OVERLAY" > "$OUT/evidence/ARK_RUNTIME_OVERLAY_SHA256"

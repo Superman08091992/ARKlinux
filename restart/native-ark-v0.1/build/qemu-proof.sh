@@ -227,7 +227,7 @@ fi
 
 PROOF_TMP="$(mktemp "$OUTDIR/.proof.txt.XXXXXX.tmp")"
 IDENTITIES_TMP="$(mktemp "$OUTDIR/.agent-identities.txt.XXXXXX.tmp")"
-grep 'ARK_SOURCE_PROVENANCE_PROBE=PASS\|ARK_AGENT_SOCKET_PROBE=PASS\|ARK_AGENT_IDENTITY_PROBE=PASS\|ARK_AGENT_IDENTITY_SET_PROBE=PASS\|ARK_AGENT_CROSS_ROLE_ACCESS_PROBE=PASS\|ARK_STATUS_PROBE=PASS\|ARK_INGESTION_PREVERIFICATION_PROBE=PASS\|ARK_INGESTION_DEDUPLICATION_PROBE=PASS\|ARK_ALATHEIA_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_REJECTION_PROBE=PASS\|ARK_ALATHEIA_VERIFICATION_PROBE=PASS\|ARK_INGESTION_PROBE=PASS\|ARK_INGESTION_PERSISTENCE_PROBE=PASS\|ARK_GRAVEYARD_UNVERIFIED_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_ADMISSION_PROBE=PASS\|ARK_GRAVEYARD_TAMPER_REJECTION_PROBE=PASS\|ARK_REAL_EMBEDDING_PROBE=PASS\|ARK_EVIDENCE_CONTINUITY_PROBE=PASS\|ARK_NATIVE_BOOT_PROOF=PASS' "$LOG" > "$PROOF_TMP"
+grep 'ARK_SOURCE_PROVENANCE_PROBE=PASS\|ARK_AGENT_SOCKET_PROBE=PASS\|ARK_AGENT_IDENTITY_PROBE=PASS\|ARK_AGENT_IDENTITY_SET_PROBE=PASS\|ARK_AGENT_CROSS_ROLE_ACCESS_PROBE=PASS\|ARK_STATUS_PROBE=PASS\|ARK_INGESTION_PREVERIFICATION_PROBE=PASS\|ARK_INGESTION_DEDUPLICATION_PROBE=PASS\|ARK_ALATHEIA_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_REJECTION_PROBE=PASS\|ARK_ALATHEIA_VERIFICATION_PROBE=PASS\|ARK_INGESTION_PROBE=PASS\|ARK_INGESTION_PERSISTENCE_PROBE=PASS\|ARK_GRAVEYARD_UNVERIFIED_REJECTION_PROBE=PASS\|ARK_GRAVEYARD_ADMISSION_PROBE=PASS\|ARK_GRAVEYARD_TAMPER_REJECTION_PROBE=PASS\|ARK_REAL_EMBEDDING_PROBE=PASS\|ARK_EVIDENCE_CONTINUITY_PROBE=PASS\|ARK_AUDIT_INTEGRITY_PROBE=PASS\|ARK_NATIVE_BOOT_PROOF=PASS' "$LOG" > "$PROOF_TMP"
 /usr/bin/python - "$PROOF_TMP" "$IDENTITIES_TMP" <<'PY'
 import collections
 import re
@@ -246,6 +246,10 @@ identity_pattern = re.compile(
 socket_pattern = re.compile(
     rf"ARK_AGENT_SOCKET_PROBE=PASS role=({role_pattern})(?![a-z])"
 )
+audit_pattern = re.compile(
+    r"ARK_AUDIT_INTEGRITY_PROBE=PASS enabled=1 pid=([1-9][0-9]*) "
+    r"backlog_limit=([0-9]+) lost=0"
+)
 identities = identity_pattern.findall(text)
 identity_counts = collections.Counter(role for role, _key_id in identities)
 if identity_counts != collections.Counter({role: 1 for role in roles}):
@@ -263,6 +267,11 @@ if text.count(
     "private=isolated peer_ledgers=read_only pairs=20"
 ) != 1:
     raise SystemExit("guest cross-role access marker is missing or duplicated")
+audit_matches = audit_pattern.findall(text)
+if len(audit_matches) != 1:
+    raise SystemExit("guest audit-integrity marker is missing or duplicated")
+if int(audit_matches[0][1]) < 8192:
+    raise SystemExit("guest audit backlog is below the release minimum")
 by_role = dict(identities)
 identity_path.write_text(
     "".join(
@@ -278,6 +287,9 @@ with proof_path.open("a", encoding="utf-8") as proof:
     # Preserve the prefixed serial evidence above, then add the canonical
     # verified markers consumed by DREAMER's release gate.
     proof.write(qemu_identity_marker + "\n")
+    proof.write(
+        "ARK_QEMU_AUDIT_INTEGRITY=PASS lost=0 minimum_backlog_limit=8192\n"
+    )
     proof.write("ARK_NATIVE_BOOT_PROOF=PASS\n")
 print(qemu_identity_marker)
 PY
@@ -291,4 +303,3 @@ IDENTITIES_TMP=""
 printf 'QEMU native boot proof passed; publishing evidence.\n'
 mv -f -- "$PROOF_TMP" "$OUTDIR/proof.txt"
 PROOF_TMP=""
-

@@ -101,6 +101,9 @@ class AgentFilesystemContractTests(unittest.TestCase):
         )
         self.assertIn('proof.write("ARK_NATIVE_BOOT_PROOF=PASS\\n")', qemu_proof)
         self.assertIn("ARK_QEMU_IDENTITY_EVIDENCE=PASS", qemu_proof)
+        self.assertIn("ARK_QEMU_AUDIT_INTEGRITY=PASS", qemu_proof)
+        self.assertIn("guest audit-integrity marker is missing or duplicated", qemu_proof)
+        self.assertIn("guest audit backlog is below the release minimum", qemu_proof)
         self.assertNotIn(
             "printf 'ARK_AGENT_IDENTITY_SET_PROBE=PASS",
             qemu_proof,
