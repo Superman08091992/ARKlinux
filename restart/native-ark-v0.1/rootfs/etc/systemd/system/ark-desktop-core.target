@@ -1,0 +1,8 @@
+[Unit]
+Description=A.R.K. critical embodied desktop control plane
+Requires=ark-ui-broker.service ark-shell-server.service
+After=ark-ui-broker.service ark-shell-server.service
+BindsTo=ark-ui-broker.service ark-shell-server.service
+
+[Install]
+WantedBy=ark.target

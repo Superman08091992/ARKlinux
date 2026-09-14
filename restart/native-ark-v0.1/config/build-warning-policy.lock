@@ -1,0 +1,6 @@
+# Native image build warning/error policy.
+# Partition table changes are applied to an attached loop device so the kernel
+# observes the GPT directly; stale loop/image state remains fail-closed.
+ARKLINUX_PARTITION_TARGET=loop-device
+ARKLINUX_REQUIRE_IMAGE_PARENT=1
+ARKLINUX_STALE_LOOP_POLICY=fail-closed
