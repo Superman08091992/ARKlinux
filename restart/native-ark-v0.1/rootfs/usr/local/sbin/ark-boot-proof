@@ -32,6 +32,29 @@ wait_active(){
   fail "inactive:$unit"
 }
 
+audit_status_field(){
+  local status="$1" field="$2" value
+  value="$(awk -v field="$field" '$1 == field { print $2 }' <<<"$status")"
+  [[ "$value" =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "$value"
+}
+
+capture_audit_status(){
+  local phase="$1" status enabled pid backlog_limit lost
+  status="$(auditctl -s 2>/dev/null)" || {
+    diagnose_unit auditd.service
+    fail "audit_status_unavailable:$phase"
+  }
+  enabled="$(audit_status_field "$status" enabled)" || fail "audit_enabled_invalid:$phase"
+  pid="$(audit_status_field "$status" pid)" || fail "audit_pid_invalid:$phase"
+  backlog_limit="$(audit_status_field "$status" backlog_limit)" || fail "audit_backlog_limit_invalid:$phase"
+  lost="$(audit_status_field "$status" lost)" || fail "audit_lost_invalid:$phase"
+  [[ "$enabled" == "1" ]] || fail "audit_disabled:$phase:$enabled"
+  (( pid > 0 )) || fail "auditd_not_connected:$phase"
+  (( backlog_limit >= 8192 )) || fail "audit_backlog_too_small:$phase:$backlog_limit"
+  printf '%s %s %s %s\n' "$enabled" "$pid" "$backlog_limit" "$lost"
+}
+
 agent_socket_responds(){
   local role="$1"
   local socket_path="$2"
@@ -153,6 +176,11 @@ ALATHEIA_COMMIT="$(tr -d '\r\n' < /etc/ark/ALATHEIA_COMMIT)"
 [[ "$ARK_GENESIS_COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail 'invalid:ARK_GENESIS_COMMIT'
 [[ "$ALATHEIA_COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail 'invalid:ALATHEIA_COMMIT'
 printf 'ARK_SOURCE_PROVENANCE_PROBE=PASS ark_genesis=%s alatheia=%s\n' "$ARK_GENESIS_COMMIT" "$ALATHEIA_COMMIT"
+
+wait_active auditd.service
+AUDIT_STATUS_START="$(capture_audit_status start)"
+read -r AUDIT_ENABLED_START AUDIT_PID_START AUDIT_BACKLOG_START AUDIT_LOST_START <<<"$AUDIT_STATUS_START"
+[[ "$AUDIT_LOST_START" == "0" ]] || fail "audit_records_already_lost:$AUDIT_LOST_START"
 
 for unit in ollama.service ark-embedding-model.service ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service arkd.service ark-local-api.service; do
   wait_active "$unit"
@@ -898,6 +926,18 @@ then
   diagnose_runtime_stack
   fail 'embedding_search_and_evidence_continuity_probe_failed'
 fi
+
+AUDIT_STATUS_END="$(capture_audit_status end)"
+read -r AUDIT_ENABLED_END AUDIT_PID_END AUDIT_BACKLOG_END AUDIT_LOST_END <<<"$AUDIT_STATUS_END"
+[[ "$AUDIT_ENABLED_END" == "$AUDIT_ENABLED_START" ]] || fail "audit_enabled_changed_during_proof"
+[[ "$AUDIT_PID_END" == "$AUDIT_PID_START" ]] || fail "auditd_restarted_during_proof"
+[[ "$AUDIT_BACKLOG_END" == "$AUDIT_BACKLOG_START" ]] || fail "audit_backlog_changed_during_proof"
+[[ "$AUDIT_LOST_END" == "$AUDIT_LOST_START" ]] || {
+  diagnose_unit auditd.service
+  fail "audit_records_lost_during_proof:start=$AUDIT_LOST_START:end=$AUDIT_LOST_END"
+}
+printf 'ARK_AUDIT_INTEGRITY_PROBE=PASS enabled=%s pid=%s backlog_limit=%s lost=%s\n' \
+  "$AUDIT_ENABLED_END" "$AUDIT_PID_END" "$AUDIT_BACKLOG_END" "$AUDIT_LOST_END"
 
 mkdir -p /var/lib/ark
 cat > /var/lib/ark/boot-proof.json <<EOF
