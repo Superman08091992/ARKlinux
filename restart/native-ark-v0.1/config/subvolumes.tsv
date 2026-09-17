@@ -24,5 +24,7 @@
 @agent-joey	/ark/agents/joey	noatime,compress=zstd:3,nodev,nosuid,noexec	ark-joey	ark-agent-audit	0750	agent-state
 @agent-hrm	/ark/agents/hrm	noatime,compress=zstd:1,nodev,nosuid,noexec	ark-hrm	ark-agent-audit	0750	agent-state
 @agent-kenny	/ark/agents/kenny	noatime,compress=zstd:3,nodev,nosuid,noexec	ark-kenny	ark-agent-audit	0750	agent-state
+@trading	/ark/trading	noatime,compress=zstd:3,nodev,nosuid,noexec	ark-trading	ark-state	0770	ark-state
+@trading-execution	/ark/agents/kenny/trading	noatime,compress=zstd:1,nodev,nosuid,noexec	ark-kenny	ark-kenny-ipc	0700	agent-state
 
 # /run/ark is volatile runtime IPC/state and is intentionally not Btrfs-backed.
