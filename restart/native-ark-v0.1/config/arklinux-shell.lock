@@ -1,4 +1,4 @@
 # Exact embodied desktop source required by this native ARKlinux image contract.
 ARKLINUX_SHELL_REPOSITORY=Superman08091992/ARKlinux-shell
-ARKLINUX_SHELL_COMMIT=492097801e8d1c40a7e078af7d129f4a434125dd
-ARKLINUX_SHELL_BRANCH=integration/native-agentic-pascal-v0.1
+ARKLINUX_SHELL_COMMIT=044bbffae33bbab19807aa1967640d2f9a536ee0
+ARKLINUX_SHELL_BRANCH=feature/kyle-embodied-operator-v0.2
