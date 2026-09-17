@@ -67,9 +67,18 @@ KPARTX_ACTIVE=0
 stage(){ printf '\n==> %s\n' "$*"; }
 
 validate_guest_contract(){
-  local label="$1" check="$2"
-  if ! arch-chroot "$MNT" /bin/bash -c "$check"; then
-    echo "ERROR: native A.R.K. contract failed: $label" >&2
+  local label="$1" check="$2" contract_log
+  [[ "$label" =~ ^[a-z0-9_]+$ ]] || { echo "ERROR: invalid contract label" >&2; return 1; }
+  mkdir -p "$OUT/evidence/contracts"
+  contract_log="$OUT/evidence/contracts/$label.log"
+  # Force stderr into the build transcript even when systemd detects a journal
+  # socket. Fail on the first failed assertion, not just the last shell command.
+  if arch-chroot "$MNT" /usr/bin/env SYSTEMD_LOG_TARGET=console \
+       SYSTEMD_LOG_LEVEL=info SYSTEMD_COLORS=0 \
+       /bin/bash -euo pipefail -c "$check" 2>&1 | tee "$contract_log"; then
+    printf 'ARK_GUEST_CONTRACT=PASS name=%s\n' "$label"
+  else
+    printf 'ERROR: native A.R.K. contract failed: %s (details: %s)\n' "$label" "$contract_log" >&2
     return 1
   fi
 }
@@ -531,7 +540,29 @@ validate_guest_contract core_units 'test -f /usr/lib/systemd/system/arkd.service
 validate_guest_contract embodied_desktop_payload 'test -s /usr/lib/arklinux-shell/dist/index.html && test -s /usr/lib/arklinux-shell/build/server.cjs && test -s /usr/lib/arklinux-shell/electron/main.cjs && test -x /usr/lib/ark-desktop/ui_broker.py && test -x /usr/local/bin/ark-embodied-desktop && test -x /usr/local/sbin/ark-desktop-ready && test -f /etc/ark/ARKLINUX_SHELL_COMMIT'
 validate_guest_contract desktop_units 'test -f /etc/systemd/system/ark-desktop-core.target && test -f /etc/systemd/system/ark-ui-broker.service && test -f /etc/systemd/system/ark-shell-server.service && test -f /etc/systemd/system/ark.target.d/20-critical-desktop.conf && test -f /etc/systemd/user/ark-embodied-desktop.service'
 validate_guest_contract audit_integrity 'systemctl is-enabled --quiet auditd.service && grep -qx -- "-b 8192" /etc/audit/rules.d/10-arklinux-backlog.rules && grep -q "audit=1 audit_backlog_limit=8192" /boot/loader/entries/arklinux.conf && grep -q "audit=1 audit_backlog_limit=8192" /boot/loader/entries/arklinux-fallback.conf'
-validate_guest_contract systemd_units 'systemd-analyze verify /usr/lib/systemd/system/auditd.service /usr/lib/systemd/system/audit-rules.service /usr/lib/systemd/system/ollama.service /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service /usr/lib/systemd/system/ark-agent@.service /usr/lib/systemd/system/ark-batch-executor.socket /usr/lib/systemd/system/ark-batch-executor.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-desktop-core.target /etc/systemd/system/ark-ui-broker.service /etc/systemd/system/ark-shell-server.service /etc/systemd/user/ark-embodied-desktop.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service /etc/systemd/system/ark-gpu-report.service /etc/systemd/system/ark-display-preflight.service'
+validate_guest_contract systemd_units 'systemd-analyze --man=no verify /usr/lib/systemd/system/auditd.service /usr/lib/systemd/system/audit-rules.service /usr/lib/systemd/system/ollama.service /usr/lib/systemd/system/arkd.service /usr/lib/systemd/system/ark-kj.service ark-agent@kyle.service ark-agent@aletheia.service ark-agent@joey.service ark-agent@hrm.service ark-agent@kenny.service /usr/lib/systemd/system/ark-batch-executor.socket /usr/lib/systemd/system/ark-batch-executor.service /usr/lib/systemd/system/ark-local-api.service /etc/systemd/system/ark-desktop-core.target /etc/systemd/system/ark-ui-broker.service /etc/systemd/system/ark-shell-server.service /etc/systemd/system/ark-display-adapter.service /etc/systemd/system/ark-embedding-model.service /etc/systemd/system/ark-firstboot.service /etc/systemd/system/ark-boot-proof.service /etc/systemd/system/ark-gpu-report.service /etc/systemd/system/ark-display-preflight.service /usr/lib/systemd/system/ark-tradeanalyzer.service /usr/lib/systemd/system/ark-tradeanalyzer-feed.service /usr/lib/systemd/system/ark-webull-executor.service'
+validate_guest_contract systemd_user_units '
+  runtime="$(mktemp -d /run/ark-user-verify.XXXXXXXX)"
+  export XDG_RUNTIME_DIR="$runtime"
+  export SYSTEMD_UNIT_PATH=/etc/systemd/user:/usr/local/lib/systemd/user:/usr/lib/systemd/user
+  systemd-analyze --user --man=no verify /etc/systemd/user/ark-embodied-desktop.service
+'
+validate_guest_contract tradeanalyzer_boot_click '
+  test -s /ark/runtime/modules/tradeanalyzer/workstation/integrated.py
+  test -s /ark/runtime/modules/tradeanalyzer/workstation/broker.py
+  test -x /usr/local/bin/ark-trading-open
+  test -s /usr/share/applications/ark-tradeanalyzer.desktop
+  test -s /usr/lib/arklinux-shell/electron/trading.cjs
+  test -s /usr/lib/arklinux-shell/electron/trading-preload.cjs
+  test -s /etc/systemd/system/ark-agent@kenny.service.d/30-webull-adapter.conf
+  test "$(readlink /etc/systemd/system/multi-user.target.wants/ark-tradeanalyzer.service)" = /usr/lib/systemd/system/ark-tradeanalyzer.service
+'
+validate_guest_contract kernel_series '
+  kernel="$(pacman -Q linux-lts | cut -d " " -f 2)"
+  headers="$(pacman -Q linux-lts-headers | cut -d " " -f 2)"
+  [[ "$kernel" == 6.18.* && "$headers" == "$kernel" ]]
+'
+
 validate_guest_contract greetd_pam 'test -f /etc/pam.d/greetd && grep -q "pam_env.so conffile=/etc/greetd/greetd-pam-env.conf" /etc/pam.d/greetd && test -f /etc/systemd/system/greetd.service.d/10-arklinux-vt.conf'
 validate_guest_contract console_failover 'grep -q "^OnFailure=getty@tty1.service$" /etc/systemd/system/ark-display-preflight.service && test "$(readlink /etc/systemd/system/serial-getty@ttyS0.service)" = /dev/null'
 validate_guest_contract package_inventory 'pacman -Q audit linux-lts linux-lts-headers mesa libdrm plasma-pa xdg-desktop-portal-kde rtkit python-cryptography nodejs-lts-krypton electron >/dev/null'

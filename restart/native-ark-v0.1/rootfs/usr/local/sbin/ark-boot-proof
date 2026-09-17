@@ -927,6 +927,8 @@ then
   fail 'embedding_search_and_evidence_continuity_probe_failed'
 fi
 
+/usr/local/sbin/ark-trading-boot-proof || fail 'trading_background_probe_failed'
+
 AUDIT_STATUS_END="$(capture_audit_status end)"
 read -r AUDIT_ENABLED_END AUDIT_PID_END AUDIT_BACKLOG_END AUDIT_LOST_END <<<"$AUDIT_STATUS_END"
 [[ "$AUDIT_ENABLED_END" == "$AUDIT_ENABLED_START" ]] || fail "audit_enabled_changed_during_proof"
