@@ -1,0 +1,42 @@
+name: Native trading image integration
+on:
+  push:
+    branches: ['feature/tradeanalyzer-execution-v1']
+  pull_request:
+    paths:
+      - 'restart/native-ark-v0.1/**'
+      - 'integration/finalize-trading-image.py'
+      - 'tests/test_native_unit_validation.py'
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Apply the exact reviewed source patch
+        run: python3 integration/finalize-trading-image.py
+      - name: Test verifier scopes, fail-stop behavior and diagnostic capture
+        run: |
+          set -euo pipefail
+          python3 tests/test_native_unit_validation.py
+          bash -n restart/native-ark-v0.1/build/build-image.sh
+          bash -n restart/native-ark-v0.1/build/qemu-proof.sh
+          bash -n restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-boot-proof
+          bash -n restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-trading-boot-proof
+          test -x restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-trading-boot-proof
+          grep -q 'ark-trading-boot-proof || fail' restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-boot-proof
+          git diff --check
+      - name: Commit only tested source edits to this integration branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feature/tradeanalyzer-execution-v1'
+        run: |
+          set -euo pipefail
+          git add -- restart/native-ark-v0.1/build/build-image.sh restart/native-ark-v0.1/build/qemu-proof.sh restart/native-ark-v0.1/rootfs/usr/local/sbin/ark-boot-proof integration/trading-image.applied
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Separate native system/user verification and require trading background boot readiness'
+            git push origin HEAD:feature/tradeanalyzer-execution-v1
+          fi
+          echo "NATIVE_IMAGE_SOURCE_COMMIT=$(git rev-parse HEAD)"
+          echo 'Offline validation only; native image construction and QEMU boot remain separate required gates.' >> "$GITHUB_STEP_SUMMARY"

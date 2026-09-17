@@ -1,4 +1,4 @@
 # Exact embodied desktop source required by this native ARKlinux image contract.
 ARKLINUX_SHELL_REPOSITORY=Superman08091992/ARKlinux-shell
-ARKLINUX_SHELL_COMMIT=044bbffae33bbab19807aa1967640d2f9a536ee0
-ARKLINUX_SHELL_BRANCH=feature/kyle-embodied-operator-v0.2
+ARKLINUX_SHELL_COMMIT=8db3ef59554fc94cd574ff47fb0589285d187d97
+ARKLINUX_SHELL_BRANCH=feature/tradeanalyzer-execution-v1

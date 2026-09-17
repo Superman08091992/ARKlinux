@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Readiness proof only: does not connect a brokerage, sign authority or submit orders.
+set -Eeuo pipefail
+for unit in ark-tradeanalyzer.service ark-tradeanalyzer-feed.service ark-webull-executor.service; do
+  ready=0
+  for _attempt in {1..60}; do
+    if systemctl is-active --quiet "$unit"; then ready=1; break; fi
+    sleep 1
+  done
+  if [[ "$ready" != 1 ]]; then
+    systemctl --no-pager --full status "$unit" >&2 || true
+    journalctl -b --no-pager -n 50 -u "$unit" >&2 || true
+    exit 1
+  fi
+done
+test -x /usr/local/bin/ark-trading-open
+test -s /usr/lib/arklinux-shell/electron/trading.cjs
+test -s /usr/lib/arklinux-shell/electron/trading-preload.cjs
+runuser -u ark-trading -- /usr/bin/env PYTHONPATH=/ark /usr/bin/python - <<'PY'
+import json
+import urllib.error
+import urllib.request
+from opt.ark.runtime.modules.tradeanalyzer.workstation.transport import call
+with urllib.request.urlopen('http://127.0.0.1:18083/health', timeout=10) as response:
+    health=json.load(response)
+if health.get('service')!='running':
+    raise SystemExit('Trading workspace health failed')
+try:
+    with urllib.request.urlopen('http://127.0.0.1:18083/state', timeout=10):
+        raise SystemExit('Unauthenticated trading state was accessible')
+except urllib.error.HTTPError as exc:
+    if exc.code!=401:raise
+status=call('/run/ark-webull-executor/broker.sock', {'operation':'status','payload':{}})
+if not isinstance(status.get('configured'),bool) or not isinstance(status.get('epoch'),int):
+    raise SystemExit('Executor status contract failed')
+print('ARK_TRADING_BACKGROUND_PROBE=PASS services=3 scope=service_readiness broker_access=not_tested probe_orders_submitted=0', flush=True)
+PY
