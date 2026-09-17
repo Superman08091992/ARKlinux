@@ -1,4 +1,4 @@
 # Exact private runtime source required by this native ARKlinux image contract.
 ARK_GENESIS_REPOSITORY=Superman08091992/ARK_GENESIS
-ARK_GENESIS_COMMIT=b5c33a215deb03854a96d78d4201c5df610377fe
+ARK_GENESIS_COMMIT=79d8af010a212eff9bd6872a346d291d6821575b
 ARK_GENESIS_BRANCH=feature/tradeanalyzer-execution-v1
