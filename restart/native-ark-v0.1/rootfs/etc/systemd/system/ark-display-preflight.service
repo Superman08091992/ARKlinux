@@ -1,0 +1,24 @@
+[Unit]
+Description=Refuse unsafe ARKlinux graphical startup
+After=systemd-udev-trigger.service ark-gpu-report.service
+Wants=ark-gpu-report.service
+Before=greetd.service
+OnFailure=getty@tty1.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ark-display-preflight
+StandardOutput=journal+console
+StandardError=journal+console
+RemainAfterExit=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/run/ark-display
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=graphical.target

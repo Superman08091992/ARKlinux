@@ -1,0 +1,91 @@
+{
+  "schema_version": "1.0",
+  "catalog_id": "ark-native-current-hardware-v1",
+  "provider": "ollama",
+  "storage_path": "/ark/models/ollama",
+  "defaults": {
+    "activation": "on_demand",
+    "runtime_state": "paused",
+    "preload": false,
+    "keep_alive": 0
+  },
+  "models": [
+    {
+      "name": "qwen3.5:4b-q4_K_M",
+      "bundle": "current-hardware",
+      "pull_by_default": true,
+      "route_state": "available",
+      "runtime_state": "paused",
+      "activation": "on_demand",
+      "preload": false,
+      "keep_alive": 0,
+      "capabilities": ["reasoning", "structured-output", "tool-planning"]
+    },
+    {
+      "name": "qwen3:4b",
+      "bundle": "current-hardware",
+      "pull_by_default": true,
+      "route_state": "available",
+      "runtime_state": "paused",
+      "activation": "on_demand",
+      "preload": false,
+      "keep_alive": 0,
+      "capabilities": ["reasoning", "structured-output", "code-review"]
+    },
+    {
+      "name": "gemma3:4b",
+      "bundle": "current-hardware",
+      "pull_by_default": true,
+      "route_state": "available",
+      "runtime_state": "paused",
+      "activation": "on_demand",
+      "preload": false,
+      "keep_alive": 0,
+      "capabilities": ["vision", "language", "structured-output"]
+    },
+    {
+      "name": "qwen3.5:2b-q4_K_M",
+      "bundle": "current-hardware",
+      "pull_by_default": true,
+      "route_state": "available",
+      "runtime_state": "paused",
+      "activation": "on_demand",
+      "preload": false,
+      "keep_alive": 0,
+      "capabilities": ["fast-intake", "classification", "structured-output"]
+    },
+    {
+      "name": "deepseek-r1:1.5b",
+      "bundle": "current-hardware",
+      "pull_by_default": true,
+      "route_state": "available",
+      "runtime_state": "paused",
+      "activation": "on_demand",
+      "preload": false,
+      "keep_alive": 0,
+      "capabilities": ["reasoning", "adversarial-review", "structured-output"]
+    }
+  ],
+  "routes": {
+    "kyle": {
+      "primary": "qwen3.5:2b-q4_K_M",
+      "alternatives": ["qwen3.5:4b-q4_K_M"]
+    },
+    "aletheia": {
+      "primary": "qwen3.5:4b-q4_K_M",
+      "alternatives": ["qwen3:4b", "deepseek-r1:1.5b"]
+    },
+    "joey": {
+      "primary": "qwen3:4b",
+      "alternatives": ["qwen3.5:4b-q4_K_M", "deepseek-r1:1.5b"]
+    },
+    "watchdog": {
+      "primary": "qwen3:4b",
+      "alternatives": ["deepseek-r1:1.5b"]
+    },
+    "vision": {
+      "primary": "gemma3:4b",
+      "alternatives": []
+    }
+  }
+}

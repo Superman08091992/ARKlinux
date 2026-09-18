@@ -1,0 +1,12 @@
+NAME="ARKlinux"
+PRETTY_NAME="ARKlinux Native v0.1"
+ID=arklinux
+ID_LIKE=arch
+VERSION="0.1.0-rc1"
+VERSION_ID="0.1.0-rc1"
+BUILD_ID="0.1.0-rc1"
+ANSI_COLOR="38;2;23;147;209"
+HOME_URL="https://github.com/Superman08091992/ARKlinux"
+DOCUMENTATION_URL="https://github.com/Superman08091992/ARKlinux"
+SUPPORT_URL="https://github.com/Superman08091992/ARKlinux/issues"
+BUG_REPORT_URL="https://github.com/Superman08091992/ARKlinux/issues"

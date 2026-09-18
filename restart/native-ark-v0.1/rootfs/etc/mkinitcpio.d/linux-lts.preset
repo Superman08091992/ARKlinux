@@ -1,0 +1,10 @@
+# ARKlinux-managed LTS boot images
+# Keep the normal hardware-specific image and a portable recovery image current
+# across linux-lts installation and upgrades.
+ALL_kver="/boot/vmlinuz-linux-lts"
+
+PRESETS=('default' 'fallback')
+
+default_image="/boot/initramfs-linux-lts.img"
+fallback_image="/boot/initramfs-linux-lts-fallback.img"
+fallback_options="-S autodetect"
